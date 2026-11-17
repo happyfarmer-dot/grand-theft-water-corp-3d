@@ -752,33 +752,33 @@ body.touch-enabled:not(.touch-disabled) #touch-controls {
   pointer-events: none;
 }
 
-/* 右下角動作按鈕群組 (互不重疊) */
+/* 右下角動作按鈕群組 (整體下移並縮小至 48px / 68px，與右上武器框保持 >=15px 間距) */
 .touch-btn-group {
   position: absolute;
-  bottom: 24px;
-  right: 24px;
-  width: 210px;
-  height: 175px;
+  bottom: 12px;
+  right: 18px;
+  width: 196px;
+  height: 136px;
   pointer-events: none;
 }
 
 .touch-btn {
   position: absolute;
-  width: 54px;
-  height: 54px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(15, 23, 42, 0.76);
   border: 2px solid var(--water-blue);
   color: #fff;
   font-family: 'Noto Sans TC', sans-serif;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
-  line-height: 1.1;
+  line-height: 1.08;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.55);
   pointer-events: auto;
   touch-action: none;
   cursor: pointer;
@@ -790,40 +790,40 @@ body.touch-enabled:not(.touch-disabled) #touch-controls {
   color: #08121e;
 }
 
-/* 主大按鈕（直徑 76px）：攻擊/射擊 or 油門 */
+/* 主大按鈕（直徑 68px）：攻擊/射擊 or 油門 */
 .touch-btn.primary-atk {
-  width: 76px;
-  height: 76px;
+  width: 68px;
+  height: 68px;
   bottom: 0;
   right: 0;
-  font-size: 13px;
+  font-size: 12px;
   border-width: 3px;
   border-color: var(--gta-red);
   background: rgba(239, 71, 111, 0.38);
 }
 
-/* 環繞主按鈕的 4 顆 54px 副按鈕 */
+/* 環繞主按鈕的 4 顆 48px 副按鈕 */
 .touch-btn.btn-jump {
-  bottom: 8px;
-  right: 92px;
+  bottom: 4px;
+  right: 80px;
   border-color: var(--gta-green);
 }
 
 .touch-btn.btn-hijack {
-  bottom: 74px;
-  right: 78px;
+  bottom: 62px;
+  right: 68px;
   border-color: var(--gta-gold);
 }
 
 .touch-btn.btn-wheel {
-  bottom: 92px;
-  right: 10px;
+  bottom: 78px;
+  right: 6px;
   border-color: #c084fc;
 }
 
 .touch-btn.btn-special {
-  bottom: 36px;
-  right: 152px;
+  bottom: 24px;
+  right: 136px;
   border-color: var(--gta-orange);
 }
 

@@ -3,11 +3,11 @@
 
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { AudioSystem } from './audio.js';
-import { GameWorld } from './world.js';
-import { VehicleManager } from './vehicles.js';
-import { WeaponSystem, WEAPON_LIST } from './weapons.js';
-import { NPCManager } from './npc.js';
+import { AudioSystem } from './audio.js?v=3';
+import { GameWorld } from './world.js?v=3';
+import { VehicleManager } from './vehicles.js?v=3';
+import { WeaponSystem, WEAPON_LIST } from './weapons.js?v=3';
+import { NPCManager } from './npc.js?v=3';
 
 class GrandTheftWaterCorpApp {
   constructor() {
@@ -30,6 +30,14 @@ class GrandTheftWaterCorpApp {
     this.settlementState = null; // null | 'overworked' | 'busted' | 'mission_passed'
     this.activeMission = null;
     this.portraitDismissed = false;
+
+    // 多視角攝影機預設（近距為預設）
+    this.cameraPresets = [
+      { label: '📷 近距', dist: 6.2, height: 4.0, lookY: 1.2 },
+      { label: '📷 中距', dist: 10.5, height: 7.5, lookY: 0.9 },
+      { label: '📷 遠距', dist: 16.5, height: 13.0, lookY: 0.6 }
+    ];
+    this.cameraMode = 0;
 
     // Input State (Desktop + Mobile Multi-Touch)
     this.input = {
@@ -63,9 +71,10 @@ class GrandTheftWaterCorpApp {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(58, w / h, 0.1, 220);
-    // 第三人稱攝影機位於主角後上方 (0, 12, 14) 並俯瞰主角，避免被天花板或牆壁遮擋
-    this.camera.position.set(0, 12, 14);
-    this.camera.lookAt(0, 1, 0);
+    // 預設第三人稱近距攝影機，緊貼主角後上方
+    const initCam = this.cameraPresets[this.cameraMode];
+    this.camera.position.set(0, initCam.height, initCam.dist);
+    this.camera.lookAt(0, initCam.lookY, 0);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -273,6 +282,7 @@ class GrandTheftWaterCorpApp {
       if (code === 'KeyF') this.handleInteractOrHijack();
       if (code === 'KeyQ') this.weaponSystem.openWheel();
       if (code === 'KeyE' || code === 'KeyR') this.handleSpecialOrForklift();
+      if (code === 'KeyV' || code === 'KeyC') this.cycleCameraMode();
 
       if (code.startsWith('Digit')) {
         const num = parseInt(code.replace('Digit', ''), 10);
@@ -379,6 +389,12 @@ class GrandTheftWaterCorpApp {
         this.audio.muted = !this.audio.muted;
         btnAudio.textContent = this.audio.muted ? '🔇' : '🔊';
       });
+    }
+
+    // 多視角攝影機切換按鈕
+    const btnCycleCam = document.getElementById('btn-cycle-cam');
+    if (btnCycleCam) {
+      btnCycleCam.addEventListener('click', () => this.cycleCameraMode());
     }
 
     // 直向防呆提示「仍要直向遊玩」關閉鈕
@@ -1112,9 +1128,10 @@ class GrandTheftWaterCorpApp {
     this.npcManager.update(dt, this.player, this.wantedStars, isDriving);
     this.audio.update(rawDt, isDriving);
 
-    // 第三人稱攝影機跟隨主角後上方 (0, 12, 14)，避免被天花板或牆壁遮擋
-    const camDist = this.settlementState ? 20 : isDriving ? 17 : 14;
-    const camHeight = this.settlementState ? 15 : isDriving ? 13 : 12;
+    // 第三人稱攝影機多視角跟隨主角後上方（近距 / 中距 / 遠距）
+    const preset = this.cameraPresets[this.cameraMode] || this.cameraPresets[0];
+    const camDist = this.settlementState ? 20 : preset.dist + (isDriving ? 3.5 : 0);
+    const camHeight = this.settlementState ? 15 : preset.height + (isDriving ? 2.0 : 0);
     const targetCamX = activePos.x;
     const targetCamY = activePos.y + camHeight;
     const targetCamZ = activePos.z + camDist;
@@ -1122,10 +1139,18 @@ class GrandTheftWaterCorpApp {
     this.camera.position.x += (targetCamX - this.camera.position.x) * 0.14;
     this.camera.position.y += (targetCamY - this.camera.position.y) * 0.14;
     this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.14;
-    this.camera.lookAt(activePos.x, activePos.y + 0.8, activePos.z);
+    this.camera.lookAt(activePos.x, activePos.y + preset.lookY, activePos.z);
 
     this.drawRadarMinimap();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  cycleCameraMode() {
+    this.cameraMode = (this.cameraMode + 1) % this.cameraPresets.length;
+    const preset = this.cameraPresets[this.cameraMode];
+    const btn = document.getElementById('btn-cycle-cam');
+    if (btn) btn.textContent = preset.label;
+    this.showComboBanner(`🎥 切換視角：${preset.label.replace('📷 ', '')}`);
   }
 }
 
