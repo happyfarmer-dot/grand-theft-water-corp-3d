@@ -714,10 +714,12 @@ body.flood-emergency #screen-fx {
   pointer-events: none;
   z-index: 25;
   display: none;
+  opacity: 1;
 }
 
-body.touch-enabled #touch-controls {
+body.touch-enabled:not(.touch-disabled) #touch-controls {
   display: block;
+  opacity: 1;
 }
 
 /* 左下角虛擬類比搖桿底座 120px + 發光搖桿頭 52px */
@@ -1154,5 +1156,41 @@ body.touch-enabled #touch-controls {
 
   .wheel-container {
     transform: scale(0.74);
+  }
+
+  body:not(.touch-disabled) #touch-controls {
+    display: block;
+    opacity: 1;
+  }
+}
+
+/* 直向窄螢幕 (max-width: 768px)：FM 98.7 廣播欄換行顯示於標題與通緝星星下方，避免與右上角按鈕重疊 */
+@media (max-width: 768px) {
+  #top-hud-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  #top-left-hud {
+    order: 1;
+    max-width: 46%;
+    min-width: 0;
+  }
+
+  #top-right-hud {
+    order: 2;
+    max-width: 52%;
+  }
+
+  #top-center-hud {
+    order: 3;
+    flex: 1 0 100%;
+    max-width: 100%;
+    margin-top: 2px;
+  }
+
+  #radar-container {
+    width: 72px;
+    height: 72px;
   }
 }

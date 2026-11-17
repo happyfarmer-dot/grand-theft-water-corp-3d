@@ -337,7 +337,15 @@ class GrandTheftWaterCorpApp {
     const btnToggleTouch = document.getElementById('btn-toggle-touch');
     if (btnToggleTouch) {
       btnToggleTouch.addEventListener('click', () => {
-        document.body.classList.toggle('touch-enabled');
+        const touchEl = document.getElementById('touch-controls');
+        const currentlyVisible = touchEl && getComputedStyle(touchEl).display !== 'none';
+        if (currentlyVisible) {
+          document.body.classList.remove('touch-enabled');
+          document.body.classList.add('touch-disabled');
+        } else {
+          document.body.classList.remove('touch-disabled');
+          document.body.classList.add('touch-enabled');
+        }
       });
     }
 
