@@ -1,0 +1,1158 @@
+:root {
+  --water-blue: #00b4d8;
+  --water-deep: #0077b6;
+  --gta-gold: #ffd166;
+  --gta-green: #2ec4b6;
+  --gta-red: #ef476f;
+  --gta-orange: #ff9f1c;
+  --hud-bg: rgba(10, 18, 28, 0.82);
+  --hud-border: rgba(0, 180, 216, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #87ceeb;
+  font-family: 'Noto Sans TC', 'Chakra Petch', sans-serif;
+  color: #f8fafc;
+  touch-action: none;
+}
+
+/* 修復一：強制 WebGL Canvas 絕對可見、滿版且位於底層 z-index: 1 */
+#game-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100dvh;
+  display: block;
+  z-index: 1;
+  transition: filter 0.35s ease;
+}
+
+body.bullet-time #game-canvas {
+  filter: contrast(1.15) saturate(1.25) brightness(0.92);
+}
+
+body.overworked-mode #game-canvas {
+  filter: grayscale(0.95) contrast(1.35) brightness(0.75);
+}
+
+body.writtenup-mode #game-canvas {
+  filter: sepia(0.35) hue-rotate(180deg) saturate(1.6) contrast(1.2);
+}
+
+/* 螢幕內建錯誤捕捉橫幅 (Debug Failsafe) - 預設完全隱藏 */
+#debug-error-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(92vw, 560px);
+  max-height: 70vh;
+  overflow-y: auto;
+  background: rgba(127, 29, 29, 0.96);
+  border: 3px solid #fca5a5;
+  border-radius: 14px;
+  padding: 18px;
+  color: #fff;
+  z-index: 9999;
+  display: none;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
+  pointer-events: auto;
+}
+
+#debug-error-banner.show {
+  display: block;
+}
+
+#debug-error-banner h2 {
+  font-size: 16px;
+  color: #fecaca;
+  margin-bottom: 8px;
+}
+
+#debug-error-text {
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 10px;
+  border-radius: 8px;
+}
+
+/* 螢幕特效暗角層（完全透明不遮擋 Canvas） */
+#screen-fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+  z-index: 3;
+  transition: box-shadow 0.25s ease;
+}
+
+body.bullet-time #screen-fx {
+  box-shadow: inset 0 0 110px rgba(0, 180, 216, 0.55);
+}
+
+body.caffeine-active #screen-fx {
+  box-shadow: inset 0 0 90px rgba(255, 209, 102, 0.65);
+}
+
+body.flood-emergency #screen-fx {
+  box-shadow: inset 0 0 95px rgba(239, 71, 111, 0.55);
+}
+
+/* 3D 投影氣泡與浮動分數層 */
+#floating-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: transparent;
+  z-index: 5;
+  overflow: hidden;
+}
+
+.npc-bubble {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  font-weight: 900;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  border: 2px solid #0f172a;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: popBubble 0.18s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.npc-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 7px 6px 0;
+  border-style: solid;
+  border-color: #0f172a transparent transparent;
+}
+
+@keyframes popBubble {
+  from { transform: translate(-50%, -80%) scale(0.5); opacity: 0; }
+  to { transform: translate(-50%, -100%) scale(1); opacity: 1; }
+}
+
+.floating-score {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: 'Chakra Petch', 'Noto Sans TC', sans-serif;
+  font-weight: 900;
+  font-size: 16px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+  pointer-events: none;
+  transition: transform 0.7s ease-out, opacity 0.7s ease-out;
+}
+
+/* 主 HUD 層：強制背景透明、預設不攔截點擊 */
+#hud-layer {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* 修復三：頂部三欄式 Flexbox 自適應排版（左欄 / 中欄 / 右欄互不重疊） */
+#top-hud-bar {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* 左欄：標題徽章 + 迷你雷達 + 桌面版可收合操作指南 */
+#top-left-hud {
+  flex: 0 0 auto;
+  max-width: 28%;
+  min-width: 165px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.game-badge {
+  background: var(--hud-bg);
+  border: 2px solid var(--hud-border);
+  border-left: 5px solid var(--water-blue);
+  border-radius: 10px;
+  padding: 6px 11px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.game-badge h1 {
+  font-size: 14px;
+  font-weight: 900;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  line-height: 1.2;
+}
+
+.game-badge h1 span.sub-en {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 10px;
+  color: var(--water-blue);
+  background: rgba(0, 180, 216, 0.16);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.location-tag {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+#zone-indicator {
+  color: var(--gta-gold);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 迷你圓形雷達小地圖：固定於左上角標題下方，絕不與左下搖桿重疊 */
+#radar-container {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  padding: 4px;
+  background: rgba(8, 16, 28, 0.9);
+  border: 3px solid #1e293b;
+  box-shadow: 0 0 0 2px var(--water-blue), 0 8px 20px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
+#radar-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: block;
+}
+
+#stealth-status-pill {
+  position: absolute;
+  bottom: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.94);
+  border: 1.5px solid #38bdf8;
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: none;
+}
+
+#stealth-status-pill.active {
+  display: block;
+}
+
+/* 桌面版可收合操作指南（手機版 max-width: 1024px 預設隱藏，改由右上 ❓ 說明彈窗顯示） */
+#controls-help-panel {
+  background: rgba(10, 18, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+#controls-help-panel.collapsed .help-body {
+  display: none;
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--water-blue);
+}
+
+.key-pill {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-family: 'Chakra Petch', monospace;
+  font-size: 11px;
+  color: var(--gta-gold);
+  margin: 0 2px;
+}
+
+.quick-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.mini-btn {
+  background: rgba(0, 180, 216, 0.24);
+  border: 1px solid rgba(0, 180, 216, 0.6);
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.mini-btn:hover, .mini-btn:active {
+  background: var(--water-blue);
+  color: #06101a;
+}
+
+/* 中欄：FM 98.7 廣播跑馬燈 + 支線進度 + Combo 提示（獨立置中且 overflow: hidden 絕不壓邊） */
+#top-center-hud {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 46%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+#radio-banner {
+  width: 100%;
+  background: linear-gradient(90deg, rgba(8, 24, 44, 0.92), rgba(15, 42, 74, 0.92), rgba(8, 24, 44, 0.92));
+  border: 1.5px solid var(--gta-gold);
+  border-radius: 999px;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.radio-station-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--gta-gold);
+  color: #08121e;
+  font-weight: 900;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.eq-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+
+.eq-bars span {
+  width: 2px;
+  background: #08121e;
+  animation: eqBounce 0.55s infinite ease-in-out alternate;
+}
+
+.eq-bars span:nth-child(2) { animation-delay: 0.18s; }
+.eq-bars span:nth-child(3) { animation-delay: 0.34s; }
+
+@keyframes eqBounce {
+  0% { height: 3px; }
+  100% { height: 10px; }
+}
+
+.radio-ticker-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+}
+
+#radio-subtitle {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fef08a;
+  animation: tickerSlide 16s linear infinite;
+}
+
+@keyframes tickerSlide {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-115%); }
+}
+
+#mission-banner {
+  display: none;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid var(--gta-orange);
+  border-radius: 10px;
+  padding: 6px 14px;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  max-width: 100%;
+}
+
+#mission-banner.active {
+  display: block;
+}
+
+#mission-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--gta-orange);
+}
+
+#mission-progress {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 14px;
+  font-weight: 900;
+  color: #fff;
+}
+
+#combo-banner {
+  font-family: 'Chakra Petch', 'Noto Sans TC', sans-serif;
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--gta-gold);
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.95);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+#combo-banner.show {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 右欄：通緝星星 + 公物損失 + 體力條/咖啡超頻條 + 武器卡 + 手機切換/說明鈕 */
+#top-right-hud {
+  flex: 0 0 auto;
+  max-width: 30%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.right-utility-row {
+  display: flex;
+  gap: 5px;
+  pointer-events: auto;
+}
+
+#wanted-stars-box {
+  background: var(--hud-bg);
+  border: 2px solid var(--hud-border);
+  border-radius: 10px;
+  padding: 5px 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.stars-row {
+  display: flex;
+  gap: 4px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.wanted-star {
+  color: rgba(255, 255, 255, 0.2);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.wanted-star.active {
+  color: var(--gta-gold);
+  text-shadow: 0 0 10px rgba(255, 209, 102, 0.95), 0 2px 4px #000;
+}
+
+#wanted-stars-box.evading .wanted-star.active {
+  animation: starBlink 0.45s infinite alternate;
+}
+
+@keyframes starBlink {
+  0% { opacity: 1; color: #38bdf8; }
+  100% { opacity: 0.25; color: var(--gta-gold); }
+}
+
+#wanted-unit-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f87171;
+  margin-top: 2px;
+  text-align: right;
+}
+
+#damage-cash-box {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 22px;
+  font-weight: 900;
+  color: #4ade80;
+  text-shadow: -1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000;
+  line-height: 1.1;
+}
+
+#damage-cash-box span.label {
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 11px;
+  color: #bbf7d0;
+  margin-right: 4px;
+}
+
+.bars-box {
+  background: var(--hud-bg);
+  border: 1.5px solid var(--hud-border);
+  border-radius: 9px;
+  padding: 6px 10px;
+  width: 205px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: auto;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stat-row span.stat-name {
+  width: 52px;
+  flex-shrink: 0;
+  color: #e2e8f0;
+}
+
+.bar-track {
+  flex: 1;
+  height: 9px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+.bar-fill {
+  height: 100%;
+  width: 100%;
+  transition: width 0.15s ease;
+}
+
+#hp-bar-fill {
+  background: linear-gradient(90deg, #ef476f, #ff6b6b);
+}
+
+#caffeine-bar-fill {
+  background: linear-gradient(90deg, #f59e0b, #fde047);
+  width: 0%;
+}
+
+#arrest-row {
+  display: none;
+}
+
+#arrest-row.active {
+  display: flex;
+}
+
+#arrest-bar-fill {
+  background: linear-gradient(90deg, #3b82f6, #ef4444);
+  width: 0%;
+}
+
+#equipped-weapon-card {
+  background: var(--hud-bg);
+  border: 2px solid var(--water-blue);
+  border-radius: 9px;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#equipped-weapon-icon {
+  font-size: 20px;
+}
+
+.weapon-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+#equipped-weapon-name {
+  font-size: 12px;
+  font-weight: 900;
+  color: #fff;
+}
+
+#equipped-weapon-desc {
+  font-size: 10px;
+  color: var(--gta-gold);
+}
+
+/* 準星與情境互動提示 */
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+#crosshair::before, #crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 4px #000;
+}
+
+#crosshair::before { top: 10px; left: 3px; right: 3px; height: 2px; }
+#crosshair::after { left: 10px; top: 3px; bottom: 3px; width: 2px; }
+
+#interaction-prompt {
+  position: absolute;
+  bottom: 24%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 18, 28, 0.92);
+  border: 2px solid var(--gta-gold);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 7px 16px;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+#interaction-prompt.show {
+  display: flex;
+}
+
+/* 修復二：手機/觸控雙手操作介面 (z-index: 25) */
+#touch-controls {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  pointer-events: none;
+  z-index: 25;
+  display: none;
+}
+
+body.touch-enabled #touch-controls {
+  display: block;
+}
+
+/* 左下角虛擬類比搖桿底座 120px + 發光搖桿頭 52px */
+#joystick-zone {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.55);
+  border: 2.5px solid rgba(0, 180, 216, 0.7);
+  box-shadow: 0 0 18px rgba(0, 180, 216, 0.3);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  margin-left: -26px;
+  margin-top: -26px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #7dd3fc, #0284c7);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.85);
+  pointer-events: none;
+}
+
+/* 右下角動作按鈕群組 (互不重疊) */
+.touch-btn-group {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 210px;
+  height: 175px;
+  pointer-events: none;
+}
+
+.touch-btn {
+  position: absolute;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.72);
+  border: 2px solid var(--water-blue);
+  color: #fff;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.touch-btn:active {
+  transform: scale(0.92);
+  background: var(--water-blue);
+  color: #08121e;
+}
+
+/* 主大按鈕（直徑 76px）：攻擊/射擊 or 油門 */
+.touch-btn.primary-atk {
+  width: 76px;
+  height: 76px;
+  bottom: 0;
+  right: 0;
+  font-size: 13px;
+  border-width: 3px;
+  border-color: var(--gta-red);
+  background: rgba(239, 71, 111, 0.38);
+}
+
+/* 環繞主按鈕的 4 顆 54px 副按鈕 */
+.touch-btn.btn-jump {
+  bottom: 8px;
+  right: 92px;
+  border-color: var(--gta-green);
+}
+
+.touch-btn.btn-hijack {
+  bottom: 74px;
+  right: 78px;
+  border-color: var(--gta-gold);
+}
+
+.touch-btn.btn-wheel {
+  bottom: 92px;
+  right: 10px;
+  border-color: #c084fc;
+}
+
+.touch-btn.btn-special {
+  bottom: 36px;
+  right: 152px;
+  border-color: var(--gta-orange);
+}
+
+#touch-drive-btns {
+  display: none;
+}
+
+/* GTA 8格圓形武器輪盤 */
+#weapon-wheel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(4, 12, 24, 0.55);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+#weapon-wheel-overlay.open {
+  display: flex;
+}
+
+.wheel-container {
+  position: relative;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(15, 23, 42, 0.95) 28%, rgba(15, 23, 42, 0.78) 70%, transparent 72%);
+  border: 3px solid rgba(0, 180, 216, 0.55);
+  box-shadow: 0 0 60px rgba(0, 180, 216, 0.45);
+}
+
+.wheel-center-info {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  background: rgba(8, 16, 28, 0.96);
+  border: 2px solid var(--gta-gold);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  text-align: center;
+}
+
+#wheel-center-icon { font-size: 30px; margin-bottom: 4px; }
+#wheel-center-title { font-size: 13px; font-weight: 900; color: var(--gta-gold); }
+#wheel-center-desc { font-size: 10.5px; color: #cbd5e1; margin-top: 3px; line-height: 1.3; }
+
+.wheel-slot {
+  position: absolute;
+  width: 92px;
+  height: 92px;
+  margin-left: -46px;
+  margin-top: -46px;
+  border-radius: 50%;
+  background: rgba(15, 28, 46, 0.94);
+  border: 2px solid rgba(148, 163, 184, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 5px;
+  text-align: center;
+}
+
+.wheel-slot:hover, .wheel-slot.selected {
+  background: rgba(0, 180, 216, 0.35);
+  border-color: var(--gta-gold);
+  transform: scale(1.12);
+}
+
+.wheel-slot .slot-icon { font-size: 24px; line-height: 1.1; }
+.wheel-slot .slot-name { font-size: 10.5px; font-weight: 900; color: #f8fafc; margin-top: 2px; line-height: 1.1; }
+.wheel-slot .slot-key {
+  position: absolute;
+  top: -5px;
+  right: -3px;
+  background: var(--gta-gold);
+  color: #08121e;
+  font-family: 'Chakra Petch', sans-serif;
+  font-weight: 900;
+  font-size: 10.5px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 說明彈窗（手機版點擊 ❓ 說明 開啟） */
+#help-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgba(5, 12, 22, 0.78);
+  backdrop-filter: blur(5px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: auto;
+}
+
+#help-modal.open {
+  display: flex;
+}
+
+.help-modal-card {
+  width: min(92vw, 480px);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: #0f172a;
+  border: 2px solid var(--water-blue);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.help-modal-card h3 {
+  color: var(--gta-gold);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* 直向握持防呆提示遮罩 (Portrait Orientation Guard) */
+#portrait-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(6, 14, 26, 0.88);
+  backdrop-filter: blur(8px);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+#portrait-guard.show {
+  display: flex;
+}
+
+#portrait-guard .rotate-icon {
+  font-size: 56px;
+}
+
+#portrait-guard h2 {
+  font-size: 20px;
+  color: var(--gta-gold);
+}
+
+#portrait-guard p {
+  font-size: 14px;
+  color: #cbd5e1;
+  max-width: 300px;
+}
+
+#btn-dismiss-portrait {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1.5px solid var(--water-blue);
+  color: #fff;
+  padding: 9px 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* GTA 經典全螢幕慢動作結算畫面 */
+#gta-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.58);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  backdrop-filter: blur(3px);
+}
+
+#gta-overlay.show {
+  display: flex;
+}
+
+.gta-banner-stripe {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.84);
+  border-top: 3px solid rgba(255, 255, 255, 0.25);
+  border-bottom: 3px solid rgba(255, 255, 255, 0.25);
+  padding: 24px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+#gta-overlay-title {
+  font-size: clamp(28px, 6vw, 60px);
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-shadow: 0 4px 18px #000;
+}
+
+#gta-overlay-subtitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e2e8f0;
+  max-width: 580px;
+}
+
+#gta-respawn-btn {
+  margin-top: 10px;
+  background: linear-gradient(135deg, var(--gta-gold), #f59e0b);
+  color: #08121e;
+  border: none;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 16px;
+  font-weight: 900;
+  padding: 11px 24px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+/* 手機/平板自適應斷點 (max-width: 1024px) */
+@media (max-width: 1024px) {
+  #controls-help-panel {
+    display: none !important;
+  }
+
+  #top-left-hud {
+    max-width: 28%;
+    min-width: 120px;
+    gap: 6px;
+  }
+
+  .game-badge {
+    padding: 4px 8px;
+  }
+
+  .game-badge h1 {
+    font-size: 12px;
+  }
+
+  .location-tag {
+    font-size: 10px;
+  }
+
+  /* 手機版縮小圓形雷達為 84x84，固定在左上角標題下方 */
+  #radar-container {
+    width: 84px;
+    height: 84px;
+    padding: 3px;
+  }
+
+  #top-center-hud {
+    max-width: 40%;
+  }
+
+  .radio-station-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  #radio-subtitle {
+    font-size: 11px;
+  }
+
+  #top-right-hud {
+    max-width: 32%;
+    gap: 4px;
+  }
+
+  #wanted-stars-box {
+    padding: 4px 8px;
+  }
+
+  .stars-row {
+    font-size: 16px;
+  }
+
+  #wanted-unit-label {
+    font-size: 9.5px;
+    display: none;
+  }
+
+  #damage-cash-box {
+    font-size: 17px;
+  }
+
+  .bars-box {
+    width: 150px;
+    padding: 4px 7px;
+  }
+
+  .stat-row {
+    font-size: 10px;
+  }
+
+  .stat-row span.stat-name {
+    width: 44px;
+  }
+
+  #equipped-weapon-card {
+    padding: 4px 8px;
+  }
+
+  #equipped-weapon-desc {
+    display: none;
+  }
+
+  .wheel-container {
+    transform: scale(0.74);
+  }
+}

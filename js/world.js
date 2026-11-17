@@ -59,7 +59,7 @@ export class GameWorld {
     this.matDesk = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.6 });
     this.matMonitor = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.4 });
     this.matScreen = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-    this.matGlass = new THREE.MeshPhysicalMaterial({
+    this.matGlass = new THREE.MeshStandardMaterial({
       color: 0x67e8f9,
       transparent: true,
       opacity: 0.42,

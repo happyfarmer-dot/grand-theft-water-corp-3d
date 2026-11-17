@@ -2,1182 +2,240 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>自來水公司3D大亂鬥：罪惡營業處 | Grand Theft Water Corp 3D</title>
-  <meta name="description" content="受《俠盜獵車手（GTA）》啟發的 3D 沙盒動作惡搞網頁遊戲：自來水公司3D大亂鬥：罪惡營業處（Grand Theft Water Corp 3D）" />
+  <meta name="description" content="受《俠盜獵車手（GTA）》系列啟發的 3D 沙盒動作惡搞網頁遊戲：自來水公司3D大亂鬥：罪惡營業處（Grand Theft Water Corp 3D）" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&family=Chakra+Petch:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css" />
 
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-      "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
     }
   }
   </script>
-
-  <style>
-    :root {
-      --water-blue: #00b4d8;
-      --water-deep: #0077b6;
-      --gta-gold: #ffd166;
-      --gta-green: #2ec4b6;
-      --gta-red: #ef476f;
-      --gta-orange: #ff9f1c;
-      --hud-bg: rgba(10, 18, 28, 0.82);
-      --hud-border: rgba(0, 180, 216, 0.45);
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-    }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #08121e;
-      font-family: 'Noto Sans TC', 'Chakra Petch', sans-serif;
-      color: #f8fafc;
-    }
-
-    #game-canvas-container {
-      position: fixed;
-      inset: 0;
-      z-index: 1;
-      transition: filter 0.35s ease;
-    }
-
-    body.bullet-time #game-canvas-container {
-      filter: contrast(1.15) saturate(1.25) brightness(0.92);
-    }
-
-    body.overworked-mode #game-canvas-container {
-      filter: grayscale(0.95) contrast(1.35) brightness(0.75);
-    }
-
-    body.writtenup-mode #game-canvas-container {
-      filter: sepia(0.35) hue-rotate(180deg) saturate(1.6) contrast(1.2);
-    }
-
-    /* Screen Vignette & Effects Overlay */
-    #screen-fx {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 3;
-      transition: box-shadow 0.25s ease, background 0.25s ease;
-    }
-
-    body.bullet-time #screen-fx {
-      box-shadow: inset 0 0 110px rgba(0, 180, 216, 0.55);
-      background: radial-gradient(circle, transparent 50%, rgba(0, 40, 80, 0.35) 100%);
-    }
-
-    body.caffeine-active #screen-fx {
-      box-shadow: inset 0 0 90px rgba(255, 209, 102, 0.65);
-    }
-
-    body.flood-emergency #screen-fx {
-      box-shadow: inset 0 0 95px rgba(239, 71, 111, 0.55);
-    }
-
-    /* Floating 3D->2D Labels Layer (Speech Bubbles, Damage, Strike) */
-    #floating-labels {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 4;
-      overflow: hidden;
-    }
-
-    .npc-bubble {
-      position: absolute;
-      transform: translate(-50%, -100%);
-      background: rgba(255, 255, 255, 0.96);
-      color: #0f172a;
-      font-weight: 900;
-      font-size: 13px;
-      padding: 6px 11px;
-      border-radius: 12px;
-      border: 2px solid #0f172a;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-      white-space: nowrap;
-      pointer-events: none;
-      animation: popBubble 0.18s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-    }
-
-    .npc-bubble::after {
-      content: '';
-      position: absolute;
-      bottom: -7px;
-      left: 50%;
-      transform: translateX(-50%);
-      border-width: 7px 6px 0;
-      border-style: solid;
-      border-color: #0f172a transparent transparent;
-    }
-
-    @keyframes popBubble {
-      from { transform: translate(-50%, -80%) scale(0.5); opacity: 0; }
-      to { transform: translate(-50%, -100%) scale(1); opacity: 1; }
-    }
-
-    .floating-score {
-      position: absolute;
-      transform: translate(-50%, -50%);
-      font-family: 'Chakra Petch', 'Noto Sans TC', sans-serif;
-      font-weight: 900;
-      font-size: 18px;
-      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-      pointer-events: none;
-      transition: transform 0.7s ease-out, opacity 0.7s ease-out;
-    }
-
-    /* Main HUD Layer */
-    #hud-layer {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 10;
-    }
-
-    /* Top Left Brand + Controls Quick Toggle */
-    #top-left-hud {
-      position: absolute;
-      top: 14px;
-      left: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      pointer-events: auto;
-      max-width: 340px;
-    }
-
-    .game-badge {
-      background: var(--hud-bg);
-      border: 2px solid var(--hud-border);
-      border-left: 5px solid var(--water-blue);
-      border-radius: 10px;
-      padding: 8px 14px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    }
-
-    .game-badge h1 {
-      font-size: 16px;
-      font-weight: 900;
-      letter-spacing: 0.5px;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .game-badge h1 span.sub-en {
-      font-family: 'Chakra Petch', sans-serif;
-      font-size: 11px;
-      color: var(--water-blue);
-      background: rgba(0, 180, 216, 0.16);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .location-tag {
-      font-size: 12px;
-      color: #cbd5e1;
-      margin-top: 3px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-    }
-
-    #zone-indicator {
-      color: var(--gta-gold);
-      font-weight: 700;
-    }
-
-    #controls-help-panel {
-      background: rgba(10, 18, 28, 0.82);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 10px;
-      padding: 9px 12px;
-      font-size: 12px;
-      line-height: 1.55;
-      color: #e2e8f0;
-      backdrop-filter: blur(6px);
-    }
-
-    #controls-help-panel.collapsed .help-body {
-      display: none;
-    }
-
-    .help-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      cursor: pointer;
-      font-weight: 700;
-      color: var(--water-blue);
-    }
-
-    .key-pill {
-      display: inline-block;
-      background: rgba(255, 255, 255, 0.14);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 4px;
-      padding: 0 5px;
-      font-family: 'Chakra Petch', monospace;
-      font-size: 11px;
-      color: var(--gta-gold);
-      margin-right: 2px;
-    }
-
-    .quick-action-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-      margin-top: 7px;
-      padding-top: 6px;
-      border-top: 1px solid rgba(255, 255, 255, 0.12);
-    }
-
-    .mini-btn {
-      background: rgba(0, 180, 216, 0.2);
-      border: 1px solid rgba(0, 180, 216, 0.55);
-      color: #f8fafc;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 4px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-
-    .mini-btn:hover {
-      background: var(--water-blue);
-      color: #06101a;
-    }
-
-    /* Top Center: FM 98.7 Radio & Active Mission Banner */
-    #top-center-hud {
-      position: absolute;
-      top: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      width: min(540px, 90vw);
-      pointer-events: none;
-    }
-
-    #radio-banner {
-      width: 100%;
-      background: linear-gradient(90deg, rgba(8, 24, 44, 0.92), rgba(15, 42, 74, 0.92), rgba(8, 24, 44, 0.92));
-      border: 1.5px solid var(--gta-gold);
-      border-radius: 999px;
-      padding: 6px 16px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-      overflow: hidden;
-      transition: opacity 0.3s ease, transform 0.3s ease;
-    }
-
-    .radio-station-tag {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--gta-gold);
-      color: #08121e;
-      font-weight: 900;
-      font-size: 12px;
-      padding: 2px 9px;
-      border-radius: 999px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .eq-bars {
-      display: inline-flex;
-      align-items: flex-end;
-      gap: 2px;
-      height: 12px;
-    }
-
-    .eq-bars span {
-      width: 2.5px;
-      background: #08121e;
-      animation: eqBounce 0.55s infinite ease-in-out alternate;
-    }
-
-    .eq-bars span:nth-child(2) { animation-delay: 0.18s; }
-    .eq-bars span:nth-child(3) { animation-delay: 0.34s; }
-
-    @keyframes eqBounce {
-      0% { height: 3px; }
-      100% { height: 12px; }
-    }
-
-    .radio-ticker-wrap {
-      flex: 1;
-      overflow: hidden;
-      white-space: nowrap;
-      position: relative;
-    }
-
-    #radio-subtitle {
-      display: inline-block;
-      font-size: 13px;
-      font-weight: 700;
-      color: #fef08a;
-      animation: tickerSlide 16s linear infinite;
-    }
-
-    @keyframes tickerSlide {
-      0% { transform: translateX(100%); }
-      100% { transform: translateX(-115%); }
-    }
-
-    /* Active Mission Banner */
-    #mission-banner {
-      display: none;
-      background: rgba(15, 23, 42, 0.92);
-      border: 2px solid var(--gta-orange);
-      border-radius: 12px;
-      padding: 8px 18px;
-      text-align: center;
-      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
-      min-width: 300px;
-    }
-
-    #mission-banner.active {
-      display: block;
-      animation: pulseMission 1.5s infinite alternate;
-    }
-
-    @keyframes pulseMission {
-      from { box-shadow: 0 0 12px rgba(255, 159, 28, 0.35); }
-      to { box-shadow: 0 0 24px rgba(255, 159, 28, 0.75); }
-    }
-
-    #mission-title {
-      font-size: 14px;
-      font-weight: 900;
-      color: var(--gta-orange);
-    }
-
-    #mission-progress {
-      font-family: 'Chakra Petch', sans-serif;
-      font-size: 18px;
-      font-weight: 900;
-      color: #fff;
-      margin-top: 2px;
-    }
-
-    /* Combo / Event Toast */
-    #combo-banner {
-      font-family: 'Chakra Petch', 'Noto Sans TC', sans-serif;
-      font-size: 24px;
-      font-weight: 900;
-      color: var(--gta-gold);
-      text-shadow: 0 4px 14px rgba(0, 0, 0, 0.9), 0 0 18px rgba(255, 209, 102, 0.8);
-      opacity: 0;
-      transform: scale(0.8);
-      transition: all 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-      text-align: center;
-    }
-
-    #combo-banner.show {
-      opacity: 1;
-      transform: scale(1);
-    }
-
-    /* Top Right: GTA Wanted Stars, Cash Damage, Health, Current Weapon */
-    #top-right-hud {
-      position: absolute;
-      top: 14px;
-      right: 16px;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 8px;
-      pointer-events: auto;
-    }
-
-    #wanted-stars-box {
-      background: var(--hud-bg);
-      border: 2px solid var(--hud-border);
-      border-radius: 10px;
-      padding: 6px 14px;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-    }
-
-    .stars-row {
-      display: flex;
-      gap: 5px;
-      font-size: 28px;
-      line-height: 1;
-    }
-
-    .wanted-star {
-      color: rgba(255, 255, 255, 0.18);
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
-      transition: transform 0.2s ease, color 0.2s ease;
-    }
-
-    .wanted-star.active {
-      color: var(--gta-gold);
-      text-shadow: 0 0 12px rgba(255, 209, 102, 0.95), 0 2px 4px #000;
-      transform: scale(1.08);
-    }
-
-    #wanted-stars-box.evading .wanted-star.active {
-      animation: starBlink 0.45s infinite alternate;
-    }
-
-    @keyframes starBlink {
-      0% { opacity: 1; color: #38bdf8; }
-      100% { opacity: 0.25; color: var(--gta-gold); }
-    }
-
-    #wanted-unit-label {
-      font-size: 12px;
-      font-weight: 700;
-      color: #f87171;
-      margin-top: 3px;
-    }
-
-    #damage-cash-box {
-      font-family: 'Chakra Petch', sans-serif;
-      font-size: 28px;
-      font-weight: 900;
-      color: #4ade80;
-      text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 4px 12px rgba(0, 0, 0, 0.75);
-      letter-spacing: 1px;
-    }
-
-    #damage-cash-box span.label {
-      font-family: 'Noto Sans TC', sans-serif;
-      font-size: 12px;
-      color: #bbf7d0;
-      margin-right: 6px;
-      vertical-align: middle;
-    }
-
-    .bars-box {
-      background: var(--hud-bg);
-      border: 1.5px solid var(--hud-border);
-      border-radius: 10px;
-      padding: 8px 12px;
-      width: 230px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .stat-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .stat-row span.stat-name {
-      width: 58px;
-      flex-shrink: 0;
-      color: #e2e8f0;
-    }
-
-    .bar-track {
-      flex: 1;
-      height: 11px;
-      background: rgba(255, 255, 255, 0.12);
-      border-radius: 999px;
-      overflow: hidden;
-      border: 1px solid rgba(0, 0, 0, 0.6);
-    }
-
-    .bar-fill {
-      height: 100%;
-      width: 100%;
-      transition: width 0.15s ease;
-    }
-
-    #hp-bar-fill {
-      background: linear-gradient(90deg, #ef476f, #ff6b6b);
-    }
-
-    #caffeine-bar-fill {
-      background: linear-gradient(90deg, #f59e0b, #fde047);
-      width: 0%;
-    }
-
-    #arrest-row {
-      display: none;
-    }
-
-    #arrest-row.active {
-      display: flex;
-    }
-
-    #arrest-bar-fill {
-      background: linear-gradient(90deg, #3b82f6, #ef4444);
-      width: 0%;
-    }
-
-    #equipped-weapon-card {
-      background: var(--hud-bg);
-      border: 2px solid var(--water-blue);
-      border-radius: 10px;
-      padding: 7px 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      cursor: pointer;
-      transition: transform 0.15s ease;
-    }
-
-    #equipped-weapon-card:hover {
-      transform: scale(1.03);
-    }
-
-    #equipped-weapon-icon {
-      font-size: 24px;
-    }
-
-    .weapon-meta {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-    }
-
-    #equipped-weapon-name {
-      font-size: 13px;
-      font-weight: 900;
-      color: #fff;
-    }
-
-    #equipped-weapon-desc {
-      font-size: 11px;
-      color: var(--gta-gold);
-    }
-
-    /* Bottom Left: Circular GTA Radar Minimap */
-    #radar-container {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      width: 186px;
-      height: 186px;
-      border-radius: 50%;
-      padding: 5px;
-      background: rgba(8, 16, 28, 0.9);
-      border: 4px solid #1e293b;
-      box-shadow: 0 0 0 2px var(--water-blue), 0 10px 28px rgba(0, 0, 0, 0.7);
-      pointer-events: auto;
-    }
-
-    #radar-canvas {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      display: block;
-    }
-
-    #stealth-status-pill {
-      position: absolute;
-      top: -32px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(15, 23, 42, 0.92);
-      border: 1.5px solid #38bdf8;
-      color: #38bdf8;
-      font-size: 12px;
-      font-weight: 900;
-      padding: 3px 10px;
-      border-radius: 999px;
-      white-space: nowrap;
-      display: none;
-    }
-
-    #stealth-status-pill.active {
-      display: block;
-    }
-
-    /* Center Crosshair & Context Prompt */
-    #crosshair {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 24px;
-      height: 24px;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      opacity: 0.75;
-    }
-
-    #crosshair::before, #crosshair::after {
-      content: '';
-      position: absolute;
-      background: rgba(255, 255, 255, 0.85);
-      box-shadow: 0 0 4px #000;
-    }
-
-    #crosshair::before {
-      top: 11px;
-      left: 4px;
-      right: 4px;
-      height: 2px;
-    }
-
-    #crosshair::after {
-      left: 11px;
-      top: 4px;
-      bottom: 4px;
-      width: 2px;
-    }
-
-    #interaction-prompt {
-      position: absolute;
-      bottom: 22%;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(10, 18, 28, 0.92);
-      border: 2px solid var(--gta-gold);
-      color: #fff;
-      font-size: 15px;
-      font-weight: 900;
-      padding: 8px 18px;
-      border-radius: 999px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
-      display: none;
-      align-items: center;
-      gap: 8px;
-      white-space: nowrap;
-      pointer-events: auto;
-      cursor: pointer;
-    }
-
-    #interaction-prompt.show {
-      display: flex;
-      animation: bouncePrompt 0.8s infinite alternate;
-    }
-
-    @keyframes bouncePrompt {
-      from { transform: translate(-50%, 0); }
-      to { transform: translate(-50%, -5px); }
-    }
-
-    /* GTA 8-Slot Circular Weapon Wheel */
-    #weapon-wheel-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 25;
-      background: rgba(4, 12, 24, 0.52);
-      backdrop-filter: blur(4px);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      pointer-events: auto;
-    }
-
-    #weapon-wheel-overlay.open {
-      display: flex;
-    }
-
-    .wheel-container {
-      position: relative;
-      width: 420px;
-      height: 420px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(15, 23, 42, 0.95) 28%, rgba(15, 23, 42, 0.78) 70%, transparent 72%);
-      border: 3px solid rgba(0, 180, 216, 0.55);
-      box-shadow: 0 0 60px rgba(0, 180, 216, 0.45);
-    }
-
-    .wheel-center-info {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 168px;
-      height: 168px;
-      border-radius: 50%;
-      background: rgba(8, 16, 28, 0.96);
-      border: 2px solid var(--gta-gold);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 12px;
-      text-align: center;
-      box-shadow: inset 0 0 20px rgba(255, 209, 102, 0.25);
-    }
-
-    #wheel-center-icon {
-      font-size: 32px;
-      margin-bottom: 4px;
-    }
-
-    #wheel-center-title {
-      font-size: 14px;
-      font-weight: 900;
-      color: var(--gta-gold);
-    }
-
-    #wheel-center-desc {
-      font-size: 11px;
-      color: #cbd5e1;
-      margin-top: 4px;
-      line-height: 1.35;
-    }
-
-    .wheel-slot {
-      position: absolute;
-      width: 96px;
-      height: 96px;
-      margin-left: -48px;
-      margin-top: -48px;
-      border-radius: 50%;
-      background: rgba(15, 28, 46, 0.92);
-      border: 2px solid rgba(148, 163, 184, 0.45);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      padding: 6px;
-      text-align: center;
-    }
-
-    .wheel-slot:hover, .wheel-slot.selected {
-      background: rgba(0, 180, 216, 0.35);
-      border-color: var(--gta-gold);
-      transform: scale(1.14);
-      box-shadow: 0 0 20px rgba(255, 209, 102, 0.65);
-    }
-
-    .wheel-slot .slot-icon {
-      font-size: 26px;
-      line-height: 1.1;
-    }
-
-    .wheel-slot .slot-name {
-      font-size: 11px;
-      font-weight: 900;
-      color: #f8fafc;
-      margin-top: 3px;
-      line-height: 1.15;
-    }
-
-    .wheel-slot .slot-key {
-      position: absolute;
-      top: -6px;
-      right: -4px;
-      background: var(--gta-gold);
-      color: #08121e;
-      font-family: 'Chakra Petch', sans-serif;
-      font-weight: 900;
-      font-size: 11px;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* GTA Classic Full-Screen Slow-Motion Settlement Overlay */
-    #gta-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 40;
-      background: rgba(0, 0, 0, 0.58);
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      pointer-events: auto;
-      backdrop-filter: blur(3px);
-    }
-
-    #gta-overlay.show {
-      display: flex;
-      animation: fadeInOverlay 0.45s ease;
-    }
-
-    @keyframes fadeInOverlay {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    .gta-banner-stripe {
-      width: 100%;
-      background: rgba(0, 0, 0, 0.82);
-      border-top: 3px solid rgba(255, 255, 255, 0.25);
-      border-bottom: 3px solid rgba(255, 255, 255, 0.25);
-      padding: 28px 20px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-    }
-
-    #gta-overlay-title {
-      font-family: 'Noto Sans TC', 'Chakra Petch', sans-serif;
-      font-size: clamp(36px, 6vw, 68px);
-      font-weight: 900;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      text-shadow: 0 6px 24px rgba(0, 0, 0, 0.95), -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000;
-      animation: slamTitle 0.45s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-    }
-
-    @keyframes slamTitle {
-      from { transform: scale(1.7); opacity: 0; }
-      to { transform: scale(1); opacity: 1; }
-    }
-
-    #gta-overlay-subtitle {
-      font-size: 18px;
-      font-weight: 700;
-      color: #e2e8f0;
-      max-width: 600px;
-    }
-
-    #gta-respawn-btn {
-      margin-top: 14px;
-      background: linear-gradient(135deg, var(--gta-gold), #f59e0b);
-      color: #08121e;
-      border: none;
-      font-family: 'Noto Sans TC', sans-serif;
-      font-size: 17px;
-      font-weight: 900;
-      padding: 12px 28px;
-      border-radius: 999px;
-      cursor: pointer;
-      box-shadow: 0 8px 24px rgba(245, 158, 11, 0.5);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    #gta-respawn-btn:hover {
-      transform: scale(1.06);
-      box-shadow: 0 10px 30px rgba(245, 158, 11, 0.75);
-    }
-
-    /* Mobile / Touch Dual-Platform Controls */
-    #touch-controls {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 18;
-      display: none;
-    }
-
-    body.touch-enabled #touch-controls {
-      display: block;
-    }
-
-    body.touch-enabled #radar-container {
-      bottom: 195px;
-      left: 16px;
-      width: 136px;
-      height: 136px;
-    }
-
-    #joystick-zone {
-      position: absolute;
-      bottom: 24px;
-      left: 24px;
-      width: 140px;
-      height: 140px;
-      border-radius: 50%;
-      background: rgba(15, 23, 42, 0.6);
-      border: 2px solid rgba(0, 180, 216, 0.55);
-      pointer-events: auto;
-      touch-action: none;
-    }
-
-    #joystick-knob {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 56px;
-      height: 56px;
-      margin-left: -28px;
-      margin-top: -28px;
-      border-radius: 50%;
-      background: radial-gradient(circle, var(--water-blue), var(--water-deep));
-      border: 2px solid #fff;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-      pointer-events: none;
-    }
-
-    .touch-btn-group {
-      position: absolute;
-      bottom: 22px;
-      right: 22px;
-      width: 220px;
-      height: 180px;
-      pointer-events: none;
-    }
-
-    .touch-btn {
-      position: absolute;
-      width: 66px;
-      height: 66px;
-      border-radius: 50%;
-      background: rgba(15, 23, 42, 0.82);
-      border: 2.5px solid var(--water-blue);
-      color: #fff;
-      font-family: 'Noto Sans TC', sans-serif;
-      font-size: 13px;
-      font-weight: 900;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
-      pointer-events: auto;
-      touch-action: none;
-      cursor: pointer;
-    }
-
-    .touch-btn:active {
-      transform: scale(0.92);
-      background: var(--water-blue);
-      color: #08121e;
-    }
-
-    .touch-btn.primary-atk {
-      width: 78px;
-      height: 78px;
-      bottom: 8px;
-      right: 8px;
-      border-color: var(--gta-red);
-      background: rgba(239, 71, 111, 0.32);
-    }
-
-    .touch-btn.btn-jump {
-      bottom: 10px;
-      right: 98px;
-      border-color: var(--gta-green);
-    }
-
-    .touch-btn.btn-hijack {
-      bottom: 94px;
-      right: 88px;
-      border-color: var(--gta-gold);
-    }
-
-    .touch-btn.btn-wheel {
-      bottom: 98px;
-      right: 8px;
-      border-color: #a855f7;
-    }
-
-    .touch-btn.btn-special {
-      bottom: 52px;
-      right: 166px;
-      width: 58px;
-      height: 58px;
-      border-color: var(--gta-orange);
-    }
-
-    #touch-drive-btns {
-      display: none;
-    }
-
-    @media (max-width: 768px) {
-      #controls-help-panel {
-        display: none;
-      }
-      #top-center-hud {
-        width: 94vw;
-        top: 66px;
-      }
-      .wheel-container {
-        transform: scale(0.78);
-      }
-    }
-  </style>
 </head>
 <body>
-  <!-- 3D WebGL Canvas Mount -->
-  <div id="game-canvas-container"></div>
+  <!-- Debug Failsafe: 僅在發生 JS 執行期錯誤時彈出紅色錯誤訊息框 -->
+  <div id="debug-error-banner">
+    <h2>⚠️ 偵測到遊戲執行錯誤（Debug Failsafe）</h2>
+    <div id="debug-error-text"></div>
+    <button class="mini-btn" style="margin-top:10px;" onclick="document.getElementById('debug-error-banner').classList.remove('show')">關閉提示</button>
+  </div>
+  <script>
+    (function () {
+      function showRuntimeError(msg) {
+        var banner = document.getElementById('debug-error-banner');
+        var textEl = document.getElementById('debug-error-text');
+        if (banner && textEl) {
+          textEl.textContent += (textEl.textContent ? '\n\n' : '') + msg;
+          banner.classList.add('show');
+        }
+      }
+      window.addEventListener('error', function (e) {
+        var info = (e.message || 'Unknown Error') +
+          (e.filename ? '\n檔案: ' + e.filename : '') +
+          (e.lineno ? ' (行號: ' + e.lineno + ':' + (e.colno || 0) + ')' : '');
+        showRuntimeError(info);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var reason = e.reason && (e.reason.stack || e.reason.message || String(e.reason));
+        showRuntimeError('Promise 錯誤:\n' + reason);
+      });
+    })();
+  </script>
 
-  <!-- Screen Effects Vignette -->
+  <!-- 滿版 3D WebGL Canvas (z-index: 1) -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- 螢幕暗角特效層（完全透明） -->
   <div id="screen-fx"></div>
 
-  <!-- Floating Speech Bubbles & Score Popups -->
+  <!-- 3D->2D 浮動對話氣泡與分數層 -->
   <div id="floating-labels"></div>
 
-  <!-- Main HUD -->
+  <!-- 主 HUD 層（背景完全透明，pointer-events: none） -->
   <div id="hud-layer">
-    <!-- Top Left: Brand, Location & Controls Cheat Sheet -->
-    <div id="top-left-hud">
-      <div class="game-badge">
-        <h1>
-          💧 自來水公司3D大亂鬥
-          <span class="sub-en">GTWC 3D</span>
-        </h1>
-        <div class="location-tag">
-          <span>📍 罪惡營業處・工務廠區</span>
-          <span id="zone-indicator">🏢 室內營業大廳</span>
+    <!-- 頂部三欄式 Flexbox 自適應資訊列 -->
+    <div id="top-hud-bar">
+      <!-- 左欄：精簡標題徽章 + 迷你圓形雷達 + 桌面版可收合教學 -->
+      <div id="top-left-hud">
+        <div class="game-badge">
+          <h1>
+            💧 自來水3D大亂鬥
+            <span class="sub-en">GTWC</span>
+          </h1>
+          <div class="location-tag">
+            <span id="zone-indicator">🏢 室內營業大廳</span>
+          </div>
+        </div>
+
+        <!-- 圓形雷達小地圖固定於左上角標題下方，絕不與左下搖桿重疊 -->
+        <div id="radar-container">
+          <div id="stealth-status-pill">🕵️ 消星：8.0s</div>
+          <canvas id="radar-canvas" width="160" height="160"></canvas>
+        </div>
+
+        <!-- 桌面版操作指南（手機 max-width: 1024px 預設隱藏） -->
+        <div id="controls-help-panel">
+          <div class="help-header" id="toggle-help-btn">
+            <span>🎮 操作指南（點擊收合）</span>
+            <span id="help-arrow">▼</span>
+          </div>
+          <div class="help-body">
+            <div><span class="key-pill">WASD</span>移動/駕駛 <span class="key-pill">Space</span>跳躍/甩尾</div>
+            <div><span class="key-pill">左鍵</span>攻擊/射擊 <span class="key-pill">按住 Q</span>武器輪盤</div>
+            <div><span class="key-pill">F</span>搶車/下車/支線 <span class="key-pill">E</span>咖啡超頻/引爆C4</div>
+            <div style="color:#38bdf8;margin-top:2px;">⚡ 打破【飲水機】再砸【電腦】觸發全場感電！</div>
+            <div class="quick-action-row">
+              <button class="mini-btn" id="btn-add-star">⭐ +1星</button>
+              <button class="mini-btn" id="btn-clear-star">🕊️ 消星</button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div id="controls-help-panel">
-        <div class="help-header" id="toggle-help-btn">
-          <span>🎮 操作指南與惡搞機關（點擊收合）</span>
-          <span id="help-arrow">▼</span>
+      <!-- 中欄：FM 98.7 廣播跑馬燈 + 支線進度（獨立於頂部中央，絕不壓邊） -->
+      <div id="top-center-hud">
+        <div id="radio-banner">
+          <div class="radio-station-tag">
+            <div class="eq-bars"><span></span><span></span><span></span></div>
+            FM 98.7
+          </div>
+          <div class="radio-ticker-wrap">
+            <div id="radio-subtitle">📻 歡迎收聽 FM 98.7 水公司之聲！溫馨提醒：嚴禁騎乘改裝渦輪辦公椅於營業大廳甩尾...</div>
+          </div>
         </div>
-        <div class="help-body">
-          <div><span class="key-pill">WASD</span>移動 / 駕駛轉向　<span class="key-pill">Space</span>跳躍 / 甩尾手煞 / 水槍滯空</div>
-          <div><span class="key-pill">滑鼠左鍵</span>攻擊 / 射擊 / 堆高機貨叉 / 水車水砲</div>
-          <div><span class="key-pill">按住 Q</span>0.2x 子彈時間武器輪盤（或按 <span class="key-pill">1~8</span>）</div>
-          <div><span class="key-pill">F</span>搶奪載具 / 下車 / 啟動支線光圈</div>
-          <div><span class="key-pill">E</span>喝特濃美式（6秒超頻）/ 引爆遙控微波爐炸彈</div>
-          <div style="color:#38bdf8;margin-top:3px;">⚡ 連鎖秘技：打破【飲水機】漫出水灘 ➔ 砸爛旁側【電腦/延長線】觸發全場感電麻痺！</div>
-          <div class="quick-action-row">
-            <button class="mini-btn" id="btn-toggle-touch">📱 切換觸控介面</button>
-            <button class="mini-btn" id="btn-add-star">⭐ +1通緝星</button>
-            <button class="mini-btn" id="btn-clear-star">🕊️ 消除通緝</button>
-            <button class="mini-btn" id="btn-toggle-audio">🔊 音效：開</button>
+
+        <div id="mission-banner">
+          <div id="mission-title">🔥 支線挑戰進行中</div>
+          <div id="mission-progress">進度：0 / 15 ｜ 60.0 秒</div>
+        </div>
+
+        <div id="combo-banner">🎳 STRIKE! 全倒連擊 +$1,500</div>
+      </div>
+
+      <!-- 右欄：功能按鈕 + 5 顆通緝星星 + 公物損失 + 體力條 + 武器卡 -->
+      <div id="top-right-hud">
+        <div class="right-utility-row">
+          <button class="mini-btn" id="btn-toggle-touch">📱 觸控開關</button>
+          <button class="mini-btn" id="btn-open-help">❓ 說明</button>
+          <button class="mini-btn" id="btn-toggle-audio">🔊</button>
+        </div>
+
+        <div id="wanted-stars-box">
+          <div class="stars-row" id="stars-row">
+            <span class="wanted-star" data-star="1">★</span>
+            <span class="wanted-star" data-star="2">★</span>
+            <span class="wanted-star" data-star="3">★</span>
+            <span class="wanted-star" data-star="4">★</span>
+            <span class="wanted-star" data-star="5">★</span>
+          </div>
+          <div id="wanted-unit-label">目前無通緝</div>
+        </div>
+
+        <div id="damage-cash-box">
+          <span class="label">公物損失</span>$<span id="damage-cash-val">0</span>
+        </div>
+
+        <div class="bars-box">
+          <div class="stat-row">
+            <span class="stat-name">❤️ 體力</span>
+            <div class="bar-track"><div class="bar-fill" id="hp-bar-fill"></div></div>
+          </div>
+          <div class="stat-row">
+            <span class="stat-name">☕ 超頻</span>
+            <div class="bar-track"><div class="bar-fill" id="caffeine-bar-fill"></div></div>
+          </div>
+          <div class="stat-row" id="arrest-row">
+            <span class="stat-name" style="color:#60a5fa;">🚨 逮捕</span>
+            <div class="bar-track"><div class="bar-fill" id="arrest-bar-fill"></div></div>
+          </div>
+        </div>
+
+        <div id="equipped-weapon-card" title="點擊或按住 Q 開啟武器輪盤">
+          <span id="equipped-weapon-icon">🔧</span>
+          <div class="weapon-meta">
+            <span id="equipped-weapon-name">2. 大號管鉗</span>
+            <span id="equipped-weapon-desc">可全壘打反擊退件公文</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Top Center: FM 98.7 Radio Ticker & Active Side Mission -->
-    <div id="top-center-hud">
-      <div id="radio-banner">
-        <div class="radio-station-tag">
-          <div class="eq-bars"><span></span><span></span><span></span></div>
-          FM 98.7 水公司之聲
-        </div>
-        <div class="radio-ticker-wrap">
-          <div id="radio-subtitle">📻 歡迎收聽 FM 98.7 水公司之聲！溫馨提醒：嚴禁騎乘改裝渦輪辦公椅於營業大廳甩尾，違者扣發年終獎金...</div>
-        </div>
-      </div>
-
-      <div id="mission-banner">
-        <div id="mission-title">🔥 支線挑戰進行中</div>
-        <div id="mission-progress">進度：0 / 15 | 剩餘 60.0 秒</div>
-      </div>
-
-      <div id="combo-banner">🎳 STRIKE! 全倒連擊 +$1,500</div>
-    </div>
-
-    <!-- Top Right: Wanted Stars, Property Damage Cash, Stamina/Caffeine, Equipped Weapon -->
-    <div id="top-right-hud">
-      <div id="wanted-stars-box">
-        <div class="stars-row" id="stars-row">
-          <span class="wanted-star" data-star="1">★</span>
-          <span class="wanted-star" data-star="2">★</span>
-          <span class="wanted-star" data-star="3">★</span>
-          <span class="wanted-star" data-star="4">★</span>
-          <span class="wanted-star" data-star="5">★</span>
-        </div>
-        <div id="wanted-unit-label">目前無通緝（奉公守法）</div>
-      </div>
-
-      <div id="damage-cash-box">
-        <span class="label">公物損失</span>$<span id="damage-cash-val">0</span>
-      </div>
-
-      <div class="bars-box">
-        <div class="stat-row">
-          <span class="stat-name">❤️ 社畜體力</span>
-          <div class="bar-track"><div class="bar-fill" id="hp-bar-fill"></div></div>
-        </div>
-        <div class="stat-row">
-          <span class="stat-name">☕ 咖啡超頻</span>
-          <div class="bar-track"><div class="bar-fill" id="caffeine-bar-fill"></div></div>
-        </div>
-        <div class="stat-row" id="arrest-row">
-          <span class="stat-name" style="color:#60a5fa;">🚨 逮捕壓制</span>
-          <div class="bar-track"><div class="bar-fill" id="arrest-bar-fill"></div></div>
-        </div>
-      </div>
-
-      <div id="equipped-weapon-card" title="點擊或按住 Q 開啟武器輪盤">
-        <span id="equipped-weapon-icon">🔧</span>
-        <div class="weapon-meta">
-          <span id="equipped-weapon-name">2. 大號管鉗</span>
-          <span id="equipped-weapon-desc">近戰重擊・可全壘打反擊退件公文</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Center Crosshair & Context Prompt -->
+    <!-- 中央準星與互動提示 -->
     <div id="crosshair"></div>
-    <div id="interaction-prompt">按 <span class="key-pill">F</span> 搶奪駕駛：倉庫電動堆高機</div>
+    <div id="interaction-prompt">按 <span class="key-pill">F</span> 搶奪駕駛</div>
+  </div>
 
-    <!-- Bottom Left: Circular GTA Radar Minimap -->
-    <div id="radar-container">
-      <div id="stealth-status-pill">🕵️ 躲藏消星中：8.0s</div>
-      <canvas id="radar-canvas" width="180" height="180"></canvas>
+  <!-- 修復二：手機雙手觸控介面 (z-index: 25) -->
+  <div id="touch-controls">
+    <!-- 左下角虛擬類比搖桿 (120px底座 + 52px發光搖桿頭，支援多點觸控) -->
+    <div id="joystick-zone">
+      <div id="joystick-knob"></div>
+    </div>
+
+    <!-- 右下角步行動作按鈕組 (5顆互不重疊) -->
+    <div class="touch-btn-group" id="touch-walk-btns">
+      <button class="touch-btn primary-atk" id="tbtn-attack">⚔️<span>攻擊/射擊</span></button>
+      <button class="touch-btn btn-jump" id="tbtn-jump">🦘<span>跳躍</span></button>
+      <button class="touch-btn btn-hijack" id="tbtn-hijack">🚗<span>上車(F)</span></button>
+      <button class="touch-btn btn-wheel" id="tbtn-wheel">🎡<span>輪盤(Q)</span></button>
+      <button class="touch-btn btn-special" id="tbtn-special">☕<span>咖啡(E)</span></button>
+    </div>
+
+    <!-- 右下角駕駛載具按鈕組 -->
+    <div class="touch-btn-group" id="touch-drive-btns">
+      <button class="touch-btn primary-atk" id="tbtn-gas">🚀<span>油門</span></button>
+      <button class="touch-btn btn-jump" id="tbtn-brake">🛞<span>倒車/煞車</span></button>
+      <button class="touch-btn btn-hijack" id="tbtn-exit">🚪<span>下車(F)</span></button>
+      <button class="touch-btn btn-wheel" id="tbtn-veh-atk">🌊<span>水砲射擊</span></button>
     </div>
   </div>
 
-  <!-- GTA 8-Slot Circular Weapon Wheel -->
+  <!-- GTA 8格圓形武器輪盤 -->
   <div id="weapon-wheel-overlay">
     <div class="wheel-container" id="wheel-slots-mount">
       <div class="wheel-center-info">
         <div id="wheel-center-icon">🔧</div>
         <div id="wheel-center-title">大號管鉗</div>
         <div id="wheel-center-desc">抓準時機揮擊可將主管丟來的「退件公文」全壘打反擊回去！</div>
-        <div style="margin-top:6px;font-size:10px;color:#38bdf8;">子彈時間 0.2x 啟動中</div>
+        <div style="margin-top:5px;font-size:10px;color:#38bdf8;">子彈時間 0.2x 啟動中</div>
       </div>
     </div>
   </div>
 
-  <!-- Dual-Platform Mobile Touch Controls -->
-  <div id="touch-controls">
-    <div id="joystick-zone">
-      <div id="joystick-knob"></div>
-    </div>
-
-    <!-- Walking Buttons -->
-    <div class="touch-btn-group" id="touch-walk-btns">
-      <button class="touch-btn primary-atk" id="tbtn-attack">💥<span>攻擊</span></button>
-      <button class="touch-btn btn-jump" id="tbtn-jump">🦘<span>跳躍</span></button>
-      <button class="touch-btn btn-hijack" id="tbtn-hijack">🚗<span>搶車 F</span></button>
-      <button class="touch-btn btn-wheel" id="tbtn-wheel">🎡<span>武器 Q</span></button>
-      <button class="touch-btn btn-special" id="tbtn-special">☕<span>特技 E</span></button>
-    </div>
-
-    <!-- Driving Buttons -->
-    <div class="touch-btn-group" id="touch-drive-btns">
-      <button class="touch-btn primary-atk" id="tbtn-gas">🚀<span>油門</span></button>
-      <button class="touch-btn btn-jump" id="tbtn-brake">🛞<span>倒車/甩尾</span></button>
-      <button class="touch-btn btn-hijack" id="tbtn-exit">🚪<span>下車 F</span></button>
-      <button class="touch-btn btn-wheel" id="tbtn-veh-atk">🌊<span>水砲/貨叉</span></button>
+  <!-- 手機版 ❓ 說明彈窗 -->
+  <div id="help-modal">
+    <div class="help-modal-card">
+      <h3>
+        <span>📖 罪惡營業處・大亂鬥說明</span>
+        <button class="mini-btn" id="btn-close-help">✖ 關閉</button>
+      </h3>
+      <p><b>💻 電腦操作：</b><span class="key-pill">WASD</span> 移動/駕駛、<span class="key-pill">Space</span> 跳躍/甩尾、<span class="key-pill">左鍵</span> 攻擊/水砲、<span class="key-pill">按住 Q</span> 武器輪盤、<span class="key-pill">F</span> 搶車/支線、<span class="key-pill">E</span> 喝咖啡/引爆微波爐 C4。</p>
+      <p style="margin-top:8px;"><b>📱 手機觸控：</b>左下角搖桿移動，右下角按鈕攻擊、跳躍、上車、切換武器輪盤與喝咖啡超頻（支援雙手多點觸控）。</p>
+      <p style="margin-top:8px;color:#38bdf8;"><b>⚡ 水＋電連鎖反應：</b>打破「桶裝水飲水機」漫出水灘後，再砸爛旁邊的「電腦主機或延長線」，整片水灘會閃爍金色電弧讓追兵集體麻痺倒地！</p>
+      <div class="quick-action-row" style="margin-top:12px;">
+        <button class="mini-btn" id="btn-modal-add-star">⭐ 測試 +1 通緝星</button>
+        <button class="mini-btn" id="btn-modal-clear-star">🕊️ 消除通緝星</button>
+      </div>
     </div>
   </div>
 
-  <!-- GTA Classic Full-Screen Slow-Motion Settlement Overlay -->
+  <!-- 直向握持防呆提示遮罩 -->
+  <div id="portrait-guard">
+    <div class="rotate-icon">📱🔄</div>
+    <h2>請將手機橫向握持</h2>
+    <p>橫向遊玩可獲得最佳 3D 營業處視野與雙手虛擬搖桿操作體驗！</p>
+    <button id="btn-dismiss-portrait">仍要直向遊玩</button>
+  </div>
+
+  <!-- GTA 經典全螢幕慢動作結算畫面 -->
   <div id="gta-overlay">
     <div class="gta-banner-stripe">
       <div id="gta-overlay-title">過勞昏倒 (OVERWORKED)</div>

@@ -140,35 +140,51 @@ export class WeaponSystem {
 
   initWheelUI() {
     this.wheelOverlay = document.getElementById('weapon-wheel-overlay');
-    this.wheelCanvas = document.getElementById('weapon-wheel-canvas');
-    this.wheelTitleEl = document.getElementById('wheel-weapon-title');
-    this.wheelDescEl = document.getElementById('wheel-weapon-desc');
+    this.wheelMount = document.getElementById('wheel-slots-mount');
+    this.wheelIconEl = document.getElementById('wheel-center-icon');
+    this.wheelTitleEl = document.getElementById('wheel-center-title');
+    this.wheelDescEl = document.getElementById('wheel-center-desc');
 
-    if (!this.wheelCanvas) return;
+    if (this.wheelMount) {
+      const radius = 148;
+      WEAPON_LIST.forEach((w, idx) => {
+        const angle = (idx / WEAPON_LIST.length) * Math.PI * 2 - Math.PI / 2;
+        const cx = 210 + Math.cos(angle) * radius;
+        const cy = 210 + Math.sin(angle) * radius;
 
-    const handlePointer = (e) => {
-      const rect = this.wheelCanvas.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = e.clientX - cx;
-      const dy = e.clientY - cy;
-      if (Math.hypot(dx, dy) > 35) {
-        let angle = Math.atan2(dy, dx) + Math.PI / 2;
-        if (angle < 0) angle += Math.PI * 2;
-        const sector = Math.floor(((angle + Math.PI / 8) % (Math.PI * 2)) / (Math.PI / 4));
-        if (sector !== this.hoveredIndex) {
-          this.hoveredIndex = sector;
+        const slotEl = document.createElement('div');
+        slotEl.className = 'wheel-slot';
+        slotEl.dataset.index = idx;
+        slotEl.style.left = `${cx}px`;
+        slotEl.style.top = `${cy}px`;
+        slotEl.innerHTML = `
+          <span class="slot-key">${w.slot}</span>
+          <div class="slot-icon">${w.icon}</div>
+          <div class="slot-name">${w.name}</div>
+        `;
+
+        slotEl.addEventListener('pointerenter', () => {
+          this.hoveredIndex = idx;
           this.drawWheel();
-        }
-      }
-    };
+        });
+        slotEl.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          this.hoveredIndex = idx;
+          this.selectWeapon(idx);
+          this.closeWheel();
+        });
 
-    this.wheelCanvas.addEventListener('pointermove', handlePointer);
-    this.wheelCanvas.addEventListener('pointerdown', (e) => {
-      handlePointer(e);
-      this.selectWeapon(this.hoveredIndex);
-      this.closeWheel();
-    });
+        this.wheelMount.appendChild(slotEl);
+      });
+    }
+
+    if (this.wheelOverlay) {
+      this.wheelOverlay.addEventListener('pointerdown', (e) => {
+        if (e.target === this.wheelOverlay) {
+          this.closeWheel();
+        }
+      });
+    }
   }
 
   openWheel() {
@@ -176,7 +192,8 @@ export class WeaponSystem {
     this.wheelOpen = true;
     this.hoveredIndex = this.currentIndex;
     if (this.wheelOverlay) this.wheelOverlay.classList.add('open');
-    this.audio.playSFX('wheel_open');
+    document.body.classList.add('bullet-time');
+    if (this.audio && this.audio.playSFX) this.audio.playSFX('wheel_open');
     this.drawWheel();
   }
 
@@ -185,66 +202,35 @@ export class WeaponSystem {
     this.wheelOpen = false;
     this.selectWeapon(this.hoveredIndex);
     if (this.wheelOverlay) this.wheelOverlay.classList.remove('open');
+    document.body.classList.remove('bullet-time');
   }
 
   selectWeapon(idx) {
     this.currentIndex = (idx + WEAPON_LIST.length) % WEAPON_LIST.length;
     this.hoveredIndex = this.currentIndex;
     this.updateHUD();
+    this.drawWheel();
   }
 
   updateHUD() {
     const w = WEAPON_LIST[this.currentIndex];
-    const nameEl = document.getElementById('hud-weapon-name');
-    const subEl = document.getElementById('hud-weapon-sub');
-    const iconEl = document.getElementById('hud-weapon-icon');
-    if (nameEl) nameEl.textContent = w.name;
-    if (subEl) subEl.textContent = w.desc.slice(0, 22) + '...';
+    const nameEl = document.getElementById('equipped-weapon-name');
+    const subEl = document.getElementById('equipped-weapon-desc');
+    const iconEl = document.getElementById('equipped-weapon-icon');
+    if (nameEl) nameEl.textContent = `${w.slot}. ${w.name}`;
+    if (subEl) subEl.textContent = w.desc.slice(0, 18) + '...';
     if (iconEl) iconEl.textContent = w.icon;
   }
 
   drawWheel() {
-    if (!this.wheelCanvas) return;
-    const ctx = this.wheelCanvas.getContext('2d');
-    const W = this.wheelCanvas.width;
-    const H = this.wheelCanvas.height;
-    const cx = W / 2;
-    const cy = H / 2;
-    ctx.clearRect(0, 0, W, H);
+    const w = WEAPON_LIST[this.hoveredIndex] || WEAPON_LIST[this.currentIndex];
+    if (this.wheelIconEl) this.wheelIconEl.textContent = w.icon;
+    if (this.wheelTitleEl) this.wheelTitleEl.textContent = `${w.slot}. ${w.name}`;
+    if (this.wheelDescEl) this.wheelDescEl.textContent = w.desc;
 
-    for (let i = 0; i < 8; i++) {
-      const startAngle = -Math.PI / 2 + i * (Math.PI / 4) - Math.PI / 8;
-      const endAngle = startAngle + Math.PI / 4;
-      const isHovered = i === this.hoveredIndex;
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, isHovered ? 198 : 188, startAngle + 0.03, endAngle - 0.03);
-      ctx.arc(cx, cy, 90, endAngle - 0.03, startAngle + 0.03, true);
-      ctx.closePath();
-
-      ctx.fillStyle = isHovered ? 'rgba(0, 229, 255, 0.38)' : 'rgba(15, 23, 42, 0.88)';
-      ctx.fill();
-      ctx.lineWidth = isHovered ? 3.5 : 1.5;
-      ctx.strokeStyle = isHovered ? '#ffbe0b' : 'rgba(255,255,255,0.22)';
-      ctx.stroke();
-
-      const midAngle = (startAngle + endAngle) / 2;
-      const rx = cx + Math.cos(midAngle) * 140;
-      const ry = cy + Math.sin(midAngle) * 140;
-
-      ctx.font = '28px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(WEAPON_LIST[i].icon, rx, ry - 10);
-
-      ctx.fillStyle = isHovered ? '#ffbe0b' : '#f8fafc';
-      ctx.font = '800 12px "Noto Sans TC", sans-serif';
-      ctx.fillText(WEAPON_LIST[i].shortName, rx, ry + 18);
-    }
-
-    const hw = WEAPON_LIST[this.hoveredIndex];
-    if (this.wheelTitleEl) this.wheelTitleEl.textContent = hw.name;
-    if (this.wheelDescEl) this.wheelDescEl.textContent = hw.desc;
+    document.querySelectorAll('.wheel-slot').forEach((el) => {
+      el.classList.toggle('selected', Number(el.dataset.index) === this.hoveredIndex);
+    });
   }
 
   findSmartLockTarget(playerPos, forwardX, forwardZ, maxRange, npcManager) {
