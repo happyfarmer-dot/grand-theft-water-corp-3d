@@ -187,7 +187,7 @@ class GrandTheftWaterCorpApp {
 
     // Golden Lightning Ring for 6s Caffeine Overclock!
     this.caffeineAura = new THREE.Mesh(
-      new THREE.TorsoGeometry ? new THREE.OctahedronGeometry(1.1, 1) : new THREE.OctahedronGeometry(1.1, 1),
+      new THREE.OctahedronGeometry(1.1, 1),
       new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true })
     );
     this.caffeineAura.visible = false;

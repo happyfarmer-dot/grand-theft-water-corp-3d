@@ -1194,3 +1194,24 @@ body.touch-enabled:not(.touch-disabled) #touch-controls {
     height: 72px;
   }
 }
+
+/* 手機橫向模式 (max-height: 500px & landscape)：微調右下角觸控按鈕組尺寸與位置，確保輪盤(Q)與右上武器卡保持 >= 12px 間距 */
+@media (max-height: 500px) and (orientation: landscape) {
+  .touch-btn-group {
+    bottom: 12px;
+    right: 28px;
+    transform: scale(0.88);
+    transform-origin: bottom right;
+  }
+
+  #joystick-zone {
+    bottom: 14px;
+    left: 18px;
+    transform: scale(0.9);
+    transform-origin: bottom left;
+  }
+
+  #equipped-weapon-card {
+    padding: 3px 7px;
+  }
+}
