@@ -1,0 +1,8 @@
+.DS_Store
+*.log
+.bashrc
+.bash_logout
+.profile
+.gitconfig
+.gemini/
+upload/

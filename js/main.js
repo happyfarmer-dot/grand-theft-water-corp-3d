@@ -1,0 +1,1029 @@
+// js/main.js
+// 遊戲主迴圈、物理步進、3D 主角控制、攝影機追蹤、雷達小地圖、支線挑戰與 GTA 慢動作結算狀態機
+
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { AudioSystem } from './audio.js';
+import { GameWorld } from './world.js';
+import { VehicleManager } from './vehicles.js';
+import { WeaponSystem, WEAPON_LIST } from './weapons.js';
+import { NPCManager } from './npc.js';
+
+class GrandTheftWaterCorpApp {
+  constructor() {
+    this.container = document.getElementById('game-canvas-container');
+    this.floatingLabels = document.getElementById('floating-labels');
+    this.radarCanvas = document.getElementById('radar-canvas');
+    this.radarCtx = this.radarCanvas ? this.radarCanvas.getContext('2d') : null;
+
+    this.audio = new AudioSystem();
+
+    // Game State
+    this.totalDamageCash = 0;
+    this.wantedPoints = 0;
+    this.wantedStars = 0;
+    this.maxWantedReached = 0;
+    this.stealthTimer = 0; // 8 seconds out of sight clears wanted stars!
+    this.SETTLEMENT_DELAY = 8.0;
+
+    this.timeScale = 1.0;
+    this.settlementState = null; // null | 'overworked' | 'busted' | 'mission_passed'
+    this.activeMission = null;
+
+    // Input State (Desktop + Mobile Touch)
+    this.input = {
+      forward: false,
+      backward: false,
+      left: false,
+      right: false,
+      jump: false,
+      attack: false,
+      joyX: 0,
+      joyY: 0
+    };
+    this.mouseYaw = 0;
+
+    this.initThreeAndPhysics();
+    this.initPlayer();
+    this.initSubsystems();
+    this.bindControls();
+    this.updateWantedHUD();
+
+    this.lastTime = performance.now();
+    requestAnimationFrame((t) => this.animate(t));
+  }
+
+  initThreeAndPhysics() {
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x0c192c);
+    this.scene.fog = new THREE.FogExp2(0x0c192c, 0.0085);
+
+    this.camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 180);
+    this.camera.position.set(0, 12, 10);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.container.appendChild(this.renderer.domElement);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xdbeafe, 0.78);
+    this.scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xfffbeb, 1.25);
+    sun.position.set(22, 38, 24);
+    sun.castShadow = true;
+    sun.shadow.mapSize.width = 1024;
+    sun.shadow.mapSize.height = 1024;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 110;
+    const d = 42;
+    sun.shadow.camera.left = -d;
+    sun.shadow.camera.right = d;
+    sun.shadow.camera.top = d;
+    sun.shadow.camera.bottom = -d;
+    this.scene.add(sun);
+
+    // Cannon-es Physics World with allowSleep = true
+    this.physicsWorld = new CANNON.World();
+    this.physicsWorld.gravity.set(0, -24, 0);
+    this.physicsWorld.allowSleep = true;
+
+    window.addEventListener('resize', () => {
+      this.camera.aspect = window.innerWidth / window.innerHeight;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  }
+
+  initPlayer() {
+    const group = new THREE.Group();
+
+    // Blue Taiwan Water Corp safety vest torso
+    const torso = new THREE.Mesh(
+      new THREE.BoxGeometry(0.66, 0.82, 0.38),
+      new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.4 })
+    );
+    torso.position.y = 0.12;
+    torso.castShadow = true;
+    group.add(torso);
+
+    // Reflective safety stripes
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.68, 0.14, 0.4),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+    );
+    stripe.position.y = 0.08;
+    group.add(stripe);
+
+    // Head + Yellow Engineer Safety Helmet
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(0.48, 0.48, 0.48),
+      new THREE.MeshStandardMaterial({ color: 0xfde68a })
+    );
+    head.position.y = 0.78;
+    group.add(head);
+
+    const helmet = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.3, 0.34, 0.22, 12),
+      new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3 })
+    );
+    helmet.position.y = 1.06;
+    group.add(helmet);
+
+    // Right arm + Pipe Wrench / Weapon visual holder
+    this.rightArmGroup = new THREE.Group();
+    this.rightArmGroup.position.set(0.42, 0.35, 0);
+    const armMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.55, 0.2),
+      new THREE.MeshStandardMaterial({ color: 0x0284c7 })
+    );
+    armMesh.position.y = -0.2;
+    this.rightArmGroup.add(armMesh);
+
+    const wrenchMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.65, 0.18),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.6 })
+    );
+    wrenchMesh.position.set(0, -0.45, 0.28);
+    wrenchMesh.rotation.x = Math.PI / 3;
+    this.rightArmGroup.add(wrenchMesh);
+    group.add(this.rightArmGroup);
+
+    // Legs
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+    this.playerLeftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.6, 0.24), legMat);
+    this.playerLeftLeg.position.set(-0.16, -0.55, 0);
+    this.playerRightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.6, 0.24), legMat);
+    this.playerRightLeg.position.set(0.16, -0.55, 0);
+    group.add(this.playerLeftLeg, this.playerRightLeg);
+
+    // Golden Lightning Ring for 6s Caffeine Overclock!
+    this.caffeineAura = new THREE.Mesh(
+      new THREE.TorsoGeometry ? new THREE.OctahedronGeometry(1.1, 1) : new THREE.OctahedronGeometry(1.1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true })
+    );
+    this.caffeineAura.visible = false;
+    group.add(this.caffeineAura);
+
+    group.position.set(0, 1.0, -2);
+    this.scene.add(group);
+
+    const body = new CANNON.Body({
+      mass: 65,
+      shape: new CANNON.Box(new CANNON.Vec3(0.4, 0.9, 0.4)),
+      position: new CANNON.Vec3(0, 1.0, -2),
+      linearDamping: 0.15
+    });
+    body.angularFactor.set(0, 1, 0);
+    this.physicsWorld.addBody(body);
+
+    this.player = {
+      mesh: group,
+      body,
+      yaw: 0,
+      health: 100,
+      caffeineTimer: 0,
+      isJumping: false,
+      swingAnimTimer: 0,
+      kickAnimTimer: 0
+    };
+  }
+
+  initSubsystems() {
+    const callbacks = {
+      onDamageAdded: (amount, reason, pos) => this.addPropertyDamage(amount, reason, pos),
+      onPopup: (pos, text, color) => this.spawnFloatingPopup(pos, text, color),
+      onComboBanner: (text) => this.showComboBanner(text),
+      onPropDestroyed: (prop) => this.handleMissionPropDestroyed(prop),
+      onBossDunked: (npc) => this.handleMissionBossDunked(npc),
+      onPlayerDamaged: (dmg) => this.damagePlayer(dmg),
+      onPlayerBusted: () => this.triggerSettlement('busted')
+    };
+
+    this.gameWorld = new GameWorld(this.scene, this.physicsWorld, this.audio, callbacks);
+    this.vehicleManager = new VehicleManager(this.scene, this.physicsWorld, this.audio, this.gameWorld, callbacks);
+    this.weaponSystem = new WeaponSystem(this.scene, this.audio, this.gameWorld, callbacks);
+    this.npcManager = new NPCManager(this.scene, this.physicsWorld, this.audio, this.gameWorld, this.camera, callbacks);
+  }
+
+  bindControls() {
+    // Start Screen Button
+    const startBtn = document.getElementById('btn-start-game');
+    const startScreen = document.getElementById('start-screen');
+    if (startBtn) {
+      startBtn.addEventListener('click', () => {
+        this.audio.init();
+        this.audio.toggleRadio(true);
+        if (startScreen) startScreen.classList.add('hidden');
+      });
+    }
+
+    // Keyboard Controls
+    window.addEventListener('keydown', (e) => {
+      if (this.settlementState) return;
+      const code = e.code;
+      if (code === 'KeyW' || code === 'ArrowUp') this.input.forward = true;
+      if (code === 'KeyS' || code === 'ArrowDown') this.input.backward = true;
+      if (code === 'KeyA' || code === 'ArrowLeft') this.input.left = true;
+      if (code === 'KeyD' || code === 'ArrowRight') this.input.right = true;
+      if (code === 'Space') {
+        this.input.jump = true;
+        if (!this.vehicleManager.currentVehicle && this.player.body.position.y < 1.35) {
+          this.player.body.velocity.y = 10.5;
+          this.player.isJumping = true;
+          this.audio.playSFX('punch');
+        }
+      }
+      if (code === 'KeyF') this.handleInteractOrHijack();
+      if (code === 'KeyQ') this.weaponSystem.openWheel();
+      if (code === 'KeyE' || code === 'KeyR') this.handleSpecialOrForklift();
+
+      // Number keys 1~8 quick weapon select
+      if (code.startsWith('Digit')) {
+        const num = parseInt(code.replace('Digit', ''), 10);
+        if (num >= 1 && num <= 8) this.weaponSystem.selectWeapon(num - 1);
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const code = e.code;
+      if (code === 'KeyW' || code === 'ArrowUp') this.input.forward = false;
+      if (code === 'KeyS' || code === 'ArrowDown') this.input.backward = false;
+      if (code === 'KeyA' || code === 'ArrowLeft') this.input.left = false;
+      if (code === 'KeyD' || code === 'ArrowRight') this.input.right = false;
+      if (code === 'Space') {
+        this.input.jump = false;
+        this.player.isJumping = false;
+      }
+      if (code === 'KeyQ') this.weaponSystem.closeWheel();
+    });
+
+    // Mouse Aim & Left Click Attack
+    window.addEventListener('pointermove', (e) => {
+      if (this.weaponSystem.wheelOpen) return;
+      const nx = (e.clientX / window.innerWidth) * 2 - 1;
+      const ny = (e.clientY / window.innerHeight) * 2 - 1;
+      this.mouseYaw = Math.atan2(nx, ny);
+    });
+
+    this.renderer.domElement.addEventListener('pointerdown', (e) => {
+      if (e.button === 0 && !this.settlementState && !this.weaponSystem.wheelOpen) {
+        this.audio.init();
+        this.input.attack = true;
+        if (!this.vehicleManager.currentVehicle) {
+          this.weaponSystem.fireWeapon(this.player, this.npcManager);
+        } else if (this.vehicleManager.currentVehicle.type === 'forklift') {
+          this.vehicleManager.triggerForkliftAction(this.vehicleManager.currentVehicle, this.npcManager);
+        }
+      }
+    });
+
+    window.addEventListener('pointerup', () => {
+      this.input.attack = false;
+    });
+
+    // HUD Quick Buttons & Weapon Card
+    const weaponCard = document.getElementById('current-weapon-card');
+    if (weaponCard) {
+      weaponCard.addEventListener('click', () => {
+        if (this.weaponSystem.wheelOpen) this.weaponSystem.closeWheel();
+        else this.weaponSystem.openWheel();
+      });
+    }
+
+    const promptEl = document.getElementById('interaction-prompt');
+    if (promptEl) {
+      promptEl.addEventListener('click', () => this.handleInteractOrHijack());
+    }
+
+    const btnToggleTouch = document.getElementById('btn-toggle-touch');
+    const touchControls = document.getElementById('touch-controls');
+    if (btnToggleTouch && touchControls) {
+      btnToggleTouch.addEventListener('click', () => {
+        touchControls.classList.toggle('active');
+      });
+    }
+
+    const btnWaterElec = document.getElementById('btn-quick-water-elec');
+    if (btnWaterElec) {
+      btnWaterElec.addEventListener('click', () => {
+        this.gameWorld.triggerInstantWaterElectricDemo(this.getActivePosition(), this.npcManager);
+      });
+    }
+
+    const btnQuickStar = document.getElementById('btn-quick-star');
+    if (btnQuickStar) {
+      btnQuickStar.addEventListener('click', () => {
+        const nextStar = Math.min(5, this.wantedStars + 1);
+        const thresholds = [0, 12000, 32000, 65000, 110000, 170000];
+        this.wantedPoints = thresholds[nextStar];
+        this.evaluateWantedLevel();
+        this.npcManager.spawnEnforcementForStar(this.wantedStars, this.getActivePosition());
+      });
+    }
+
+    const btnQuickMission = document.getElementById('btn-quick-mission');
+    if (btnQuickMission) {
+      btnQuickMission.addEventListener('click', () => {
+        const nextIdx = this.activeMission
+          ? (this.gameWorld.missionRings.findIndex((m) => m.id === this.activeMission.id) + 1) % this.gameWorld.missionRings.length
+          : 0;
+        this.startSideMission(this.gameWorld.missionRings[nextIdx]);
+      });
+    }
+
+    const btnRespawn = document.getElementById('btn-respawn-continue');
+    if (btnRespawn) {
+      btnRespawn.addEventListener('click', () => this.respawnAndContinue());
+    }
+
+    // Mobile / Tablet Virtual Joystick & Dynamic Walk/Drive Touch Buttons
+    this.bindTouchControls();
+  }
+
+  bindTouchControls() {
+    const joyZone = document.getElementById('joystick-zone');
+    const joyKnob = document.getElementById('joystick-knob');
+    if (joyZone && joyKnob) {
+      let dragging = false;
+      const updateJoy = (e) => {
+        const rect = joyZone.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = e.clientX - cx;
+        const dy = e.clientY - cy;
+        const maxR = rect.width * 0.42;
+        const dist = Math.min(maxR, Math.hypot(dx, dy));
+        const angle = Math.atan2(dy, dx);
+        const kx = Math.cos(angle) * dist;
+        const ky = Math.sin(angle) * dist;
+        joyKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+        this.input.joyX = kx / maxR;
+        this.input.joyY = ky / maxR;
+        this.input.forward = this.input.joyY < -0.25;
+        this.input.backward = this.input.joyY > 0.25;
+        this.input.left = this.input.joyX < -0.25;
+        this.input.right = this.input.joyX > 0.25;
+        if (dist > 8) this.mouseYaw = Math.atan2(this.input.joyX, this.input.joyY);
+      };
+
+      joyZone.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        joyZone.setPointerCapture(e.pointerId);
+        updateJoy(e);
+      });
+      joyZone.addEventListener('pointermove', (e) => {
+        if (dragging) updateJoy(e);
+      });
+      const resetJoy = () => {
+        dragging = false;
+        joyKnob.style.transform = 'translate(-50%, -50%)';
+        this.input.joyX = 0;
+        this.input.joyY = 0;
+        this.input.forward = false;
+        this.input.backward = false;
+        this.input.left = false;
+        this.input.right = false;
+      };
+      joyZone.addEventListener('pointerup', resetJoy);
+      joyZone.addEventListener('pointercancel', resetJoy);
+    }
+
+    const bindBtn = (id, downFn, upFn) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.audio.init();
+        if (downFn) downFn();
+      });
+      if (upFn) {
+        el.addEventListener('pointerup', upFn);
+        el.addEventListener('pointercancel', upFn);
+      }
+    };
+
+    // Walk Buttons
+    bindBtn('t-btn-wheel', () => {
+      if (this.weaponSystem.wheelOpen) this.weaponSystem.closeWheel();
+      else this.weaponSystem.openWheel();
+    });
+    bindBtn('t-btn-special', () => this.handleSpecialOrForklift());
+    bindBtn('t-btn-hijack', () => this.handleInteractOrHijack());
+    bindBtn('t-btn-jump', () => {
+      this.input.jump = true;
+      if (this.player.body.position.y < 1.35) this.player.body.velocity.y = 10.5;
+      this.player.isJumping = true;
+    }, () => {
+      this.input.jump = false;
+      this.player.isJumping = false;
+    });
+    bindBtn('t-btn-attack', () => {
+      this.input.attack = true;
+      this.weaponSystem.fireWeapon(this.player, this.npcManager);
+    }, () => {
+      this.input.attack = false;
+    });
+
+    // Drive Buttons
+    bindBtn('t-btn-fork-up', () => this.handleSpecialOrForklift());
+    bindBtn('t-btn-water-cannon', () => { this.input.attack = true; }, () => { this.input.attack = false; });
+    bindBtn('t-btn-exit-car', () => this.handleInteractOrHijack());
+    bindBtn('t-btn-brake', () => { this.input.backward = true; this.input.jump = true; }, () => { this.input.backward = false; this.input.jump = false; });
+    bindBtn('t-btn-gas', () => { this.input.forward = true; }, () => { this.input.forward = false; });
+  }
+
+  getActivePosition() {
+    return this.vehicleManager.currentVehicle
+      ? this.vehicleManager.currentVehicle.body.position
+      : this.player.body.position;
+  }
+
+  handleSpecialOrForklift() {
+    if (this.vehicleManager.currentVehicle) {
+      if (this.vehicleManager.currentVehicle.type === 'forklift') {
+        this.vehicleManager.triggerForkliftAction(this.vehicleManager.currentVehicle, this.npcManager);
+      } else {
+        this.audio.playSFX('siren');
+      }
+    } else {
+      this.weaponSystem.triggerSpecial(this.player, this.npcManager);
+    }
+  }
+
+  handleInteractOrHijack() {
+    const walkGroup = document.getElementById('touch-walk-group');
+    const driveGroup = document.getElementById('touch-drive-group');
+
+    // If currently driving -> Exit vehicle
+    if (this.vehicleManager.currentVehicle) {
+      const v = this.vehicleManager.currentVehicle;
+      this.vehicleManager.currentVehicle = null;
+      this.player.body.position.set(v.body.position.x + 2.2, 1.2, v.body.position.z);
+      this.player.body.velocity.set(0, 4, 0);
+      this.player.mesh.visible = true;
+      if (walkGroup) walkGroup.classList.remove('hidden');
+      if (driveGroup) driveGroup.classList.add('hidden');
+      this.spawnFloatingPopup(this.player.body.position, `🚪 下車：${v.name}`, '#38bdf8');
+      return;
+    }
+
+    // Check if near any Side-Mission Corona
+    const pPos = this.player.body.position;
+    for (const m of this.gameWorld.missionRings) {
+      if (Math.hypot(pPos.x - m.x, pPos.z - m.z) < 3.2) {
+        this.startSideMission(m);
+        return;
+      }
+    }
+
+    // Check if near any Vehicle to Hijack!
+    const nearestCar = this.vehicleManager.findNearestVehicle(pPos, 4.5);
+    if (nearestCar) {
+      this.vehicleManager.currentVehicle = nearestCar;
+      this.player.mesh.visible = false;
+      this.audio.toggleRadio(true);
+      this.audio.pushBreakingNews(`🎙️【FM 98.7 水公司之聲】插播最新路況：營業處有一名員工搶走了「${nearestCar.name}」正在橫衝直撞！`);
+      if (walkGroup) walkGroup.classList.add('hidden');
+      if (driveGroup) driveGroup.classList.remove('hidden');
+
+      const witness = this.npcManager.findNearestNPC(nearestCar.body.position.x, nearestCar.body.position.z, 9.0);
+      if (witness) {
+        this.npcManager.showBubble(witness, '這是公家車你不能開走！', true);
+      }
+      this.spawnFloatingPopup(nearestCar.body.position, `🚗 搶奪駕駛：${nearestCar.name}`, '#ffbe0b');
+    }
+  }
+
+  startSideMission(missionCfg) {
+    if (!missionCfg) return;
+    this.activeMission = {
+      ...missionCfg,
+      progress: 0,
+      timeLeft: missionCfg.duration,
+      startDamage: this.totalDamageCash
+    };
+    this.audio.playSFX('caffeine_boost');
+    this.showComboBanner(`🏁 任務開始：${missionCfg.title}`);
+    const hud = document.getElementById('mission-hud');
+    if (hud) hud.classList.add('active');
+    this.updateMissionHUD();
+  }
+
+  handleMissionPropDestroyed(prop) {
+    if (!this.activeMission) return;
+    if (this.activeMission.id === 'smash_pcs') {
+      this.activeMission.progress++;
+      this.updateMissionHUD();
+      if (this.activeMission.progress >= this.activeMission.targetCount) {
+        this.completeSideMission();
+      }
+    }
+  }
+
+  handleMissionBossDunked() {
+    if (!this.activeMission) return;
+    if (this.activeMission.id === 'forklift_boss') {
+      this.activeMission.progress++;
+      this.updateMissionHUD();
+      if (this.activeMission.progress >= this.activeMission.targetCount) {
+        this.completeSideMission();
+      }
+    }
+  }
+
+  updateMissionHUD() {
+    if (!this.activeMission) return;
+    const m = this.activeMission;
+    if (m.id === 'water_electric') {
+      m.progress = Math.min(m.targetCount, this.totalDamageCash - m.startDamage);
+      if (m.progress >= m.targetCount) {
+        this.completeSideMission();
+        return;
+      }
+    }
+
+    const titleEl = document.getElementById('mission-title');
+    const timerEl = document.getElementById('mission-timer');
+    const descEl = document.getElementById('mission-desc');
+    const barEl = document.getElementById('mission-progress-bar');
+
+    if (titleEl) titleEl.textContent = m.title;
+    if (timerEl) timerEl.textContent = `${Math.max(0, m.timeLeft).toFixed(1)}s`;
+    if (descEl) descEl.textContent = `${m.desc}（${m.progress} / ${m.targetCount}）`;
+    if (barEl) barEl.style.width = `${Math.min(100, (m.progress / m.targetCount) * 100)}%`;
+  }
+
+  completeSideMission() {
+    const m = this.activeMission;
+    this.activeMission = null;
+    const hud = document.getElementById('mission-hud');
+    if (hud) hud.classList.remove('active');
+    this.addPropertyDamage(50000, `完成支線任務：${m.title}`, this.getActivePosition());
+    this.triggerSettlement('mission_passed');
+  }
+
+  addPropertyDamage(amount, reason, pos) {
+    this.totalDamageCash += amount;
+    this.wantedPoints += amount;
+
+    const dmgEl = document.getElementById('damage-amount');
+    if (dmgEl) {
+      dmgEl.textContent = '$' + this.totalDamageCash.toString().padStart(9, '0').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    this.evaluateWantedLevel();
+    if (this.activeMission && this.activeMission.id === 'water_electric') {
+      this.updateMissionHUD();
+    }
+  }
+
+  evaluateWantedLevel() {
+    const thresholds = [0, 12000, 32000, 65000, 110000, 170000];
+    let newStars = 0;
+    for (let s = 5; s >= 1; s--) {
+      if (this.wantedPoints >= thresholds[s]) {
+        newStars = s;
+        break;
+      }
+    }
+
+    if (newStars > this.wantedStars) {
+      this.wantedStars = newStars;
+      this.maxWantedReached = Math.max(this.maxWantedReached, newStars);
+      this.stealthTimer = 0;
+      this.audio.playSFX('siren');
+      this.npcManager.spawnEnforcementForStar(this.wantedStars, this.getActivePosition());
+
+      if (this.wantedStars === 5) {
+        this.showComboBanner('🚨 5 星最高通緝！防汛特勤隊出動＆全館供水總閥超壓爆管！');
+      }
+    }
+    this.updateWantedHUD();
+  }
+
+  updateWantedHUD(isBlinking = false) {
+    const starsWrap = document.getElementById('wanted-stars');
+    const unitLabel = document.getElementById('wanted-unit-label');
+    const radarWrap = document.getElementById('radar-wrapper');
+
+    if (starsWrap) {
+      starsWrap.classList.toggle('blinking', isBlinking);
+      const starSpans = starsWrap.querySelectorAll('.star');
+      starSpans.forEach((el, idx) => {
+        el.classList.toggle('active', idx < this.wantedStars);
+      });
+    }
+
+    if (radarWrap) {
+      radarWrap.classList.toggle('wanted-alert', this.wantedStars > 0);
+    }
+
+    const descriptions = [
+      '目前狀態：正常執勤（0 星）',
+      '★1 總務組警告：雞毛撢子與訂書機追擊',
+      '★★2 保全與政風處：電擊棒圍捕',
+      '★★★3 工務搶修班：工程車封鎖與高壓水槍',
+      '★★★★4 總處督導組空降：退件公文飛彈',
+      '★★★★★5 防汛特勤隊：重型水車＆全館爆管！'
+    ];
+    if (unitLabel) unitLabel.textContent = descriptions[this.wantedStars] || descriptions[0];
+  }
+
+  damagePlayer(dmg) {
+    if (this.settlementState) return;
+    this.player.health = Math.max(0, this.player.health - dmg);
+    const bar = document.getElementById('health-bar-fill');
+    if (bar) bar.style.width = `${this.player.health}%`;
+    if (this.player.health <= 0) {
+      this.triggerSettlement('overworked');
+    }
+  }
+
+  // GTA Classic Full-Screen Slow-Motion Settlement Screen
+  triggerSettlement(type) {
+    if (this.settlementState) return;
+    this.settlementState = type;
+    this.timeScale = 0.22;
+
+    const screen = document.getElementById('settlement-screen');
+    const band = document.getElementById('settlement-band');
+    const titleEl = document.getElementById('settlement-main-title');
+    const subEl = document.getElementById('settlement-sub-title');
+    const statsEl = document.getElementById('settlement-stats');
+
+    this.container.classList.remove('filter-bw', 'filter-busted', 'filter-SlowMo');
+
+    if (type === 'overworked') {
+      this.audio.playSFX('wasted');
+      this.container.classList.add('filter-bw');
+      if (band) band.style.color = '#ff2a54';
+      if (titleEl) titleEl.textContent = '過勞昏倒 (OVERWORKED)';
+      if (subEl) subEl.textContent = '您的肝指數已突破自來水公司安全水壓上限，被送往醫務室強制休假！';
+    } else if (type === 'busted') {
+      this.audio.playSFX('busted');
+      this.container.classList.add('filter-busted');
+      if (band) band.style.color = '#00b4d8';
+      if (titleEl) titleEl.textContent = '記大過處分 (WRITTEN UP)';
+      if (subEl) subEl.textContent = '您被高星等保全與政風處人員團團包圍，當場簽下悔過書！';
+    } else {
+      this.audio.playSFX('mission_passed');
+      this.container.classList.add('filter-SlowMo');
+      if (band) band.style.color = '#ffbe0b';
+      if (titleEl) titleEl.textContent = '準時下班 (MISSION PASSED! RESPECT +)';
+      if (subEl) subEl.textContent = '恭喜完成限時惡搞挑戰！獲得 $50,000 精神撫慰破壞津貼！';
+    }
+
+    if (statsEl) {
+      statsEl.textContent = `累積公物破壞損失：$${this.totalDamageCash.toLocaleString()} | 最高通緝星等：${this.maxWantedReached} ★`;
+    }
+    if (screen) screen.classList.add('active');
+  }
+
+  respawnAndContinue() {
+    this.settlementState = null;
+    this.timeScale = 1.0;
+    this.player.health = 100;
+    this.wantedStars = 0;
+    this.wantedPoints = 0;
+    this.stealthTimer = 0;
+    this.npcManager.clearAllEnforcement();
+    this.updateWantedHUD(false);
+
+    const bar = document.getElementById('health-bar-fill');
+    if (bar) bar.style.width = '100%';
+    this.container.classList.remove('filter-bw', 'filter-busted', 'filter-SlowMo');
+
+    const screen = document.getElementById('settlement-screen');
+    if (screen) screen.classList.remove('active');
+    const stealthWrap = document.getElementById('stealth-cooldown-wrap');
+    if (stealthWrap) stealthWrap.classList.remove('active');
+  }
+
+  spawnFloatingPopup(worldPos, text, color = '#ffbe0b') {
+    if (!this.floatingLabels || !worldPos) return;
+    const v = new THREE.Vector3(worldPos.x, (worldPos.y || 1) + 1.2, worldPos.z);
+    v.project(this.camera);
+    if (v.z > 1) return;
+
+    const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+
+    const el = document.createElement('div');
+    el.className = 'floating-popup';
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.color = color;
+    el.textContent = text;
+    this.floatingLabels.appendChild(el);
+    setTimeout(() => el.remove(), 1250);
+  }
+
+  showComboBanner(text) {
+    const banner = document.getElementById('combo-banner');
+    if (!banner) return;
+    banner.textContent = text;
+    banner.classList.add('show');
+    clearTimeout(this.bannerTimeout);
+    this.bannerTimeout = setTimeout(() => banner.classList.remove('show'), 2800);
+  }
+
+  // Bottom-Left Circular GTA Radar Minimap with Enforcement Vision Cones!
+  drawRadarMinimap() {
+    if (!this.radarCtx || !this.radarCanvas) return;
+    const ctx = this.radarCtx;
+    const W = this.radarCanvas.width;
+    const H = this.radarCanvas.height;
+    const cx = W / 2;
+    const cy = H / 2;
+    const scale = 2.05; // pixels per world meter
+
+    const activePos = this.getActivePosition();
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // Draw Indoor Hall boundary (x: -29..29, z: -34..6)
+    ctx.fillStyle = 'rgba(30, 41, 59, 0.85)';
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect((-29 - activePos.x) * scale, (-34 - activePos.z) * scale, 58 * scale, 40 * scale);
+    ctx.strokeRect((-29 - activePos.x) * scale, (-34 - activePos.z) * scale, 58 * scale, 40 * scale);
+
+    // Draw Pantry Safe Stealth Zone (茶水間死角)
+    const pz = this.gameWorld.pantryZone;
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.25)';
+    ctx.fillRect(
+      (pz.minX - activePos.x) * scale,
+      (pz.minZ - activePos.z) * scale,
+      (pz.maxX - pz.minX) * scale,
+      (pz.maxZ - pz.minZ) * scale
+    );
+
+    // Draw Water Puddles
+    for (const p of this.gameWorld.puddles) {
+      ctx.beginPath();
+      ctx.arc((p.x - activePos.x) * scale, (p.z - activePos.z) * scale, p.radius * scale, 0, Math.PI * 2);
+      ctx.fillStyle = p.electrified ? 'rgba(250, 204, 21, 0.55)' : 'rgba(0, 180, 216, 0.45)';
+      ctx.fill();
+    }
+
+    // Draw Side-Mission Coronas
+    for (const m of this.gameWorld.missionRings) {
+      ctx.beginPath();
+      ctx.arc((m.x - activePos.x) * scale, (m.z - activePos.z) * scale, 5.5, 0, Math.PI * 2);
+      ctx.strokeStyle = '#' + m.color.toString(16).padStart(6, '0');
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+
+    // Draw Vehicles
+    for (const v of this.vehicleManager.vehicles) {
+      const vx = (v.body.position.x - activePos.x) * scale;
+      const vz = (v.body.position.z - activePos.z) * scale;
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(vx - 3.5, vz - 3.5, 7, 7);
+    }
+
+    // Draw NPCs & Enforcement Vision Cones (追兵扇形視野錐)
+    for (const npc of this.npcManager.npcs) {
+      if (npc.knockedDown) continue;
+      const nx = (npc.body.position.x - activePos.x) * scale;
+      const nz = (npc.body.position.z - activePos.z) * scale;
+
+      if (npc.isEnforcement) {
+        const coneAngle = Math.atan2(Math.cos(npc.yaw), Math.sin(npc.yaw));
+        ctx.beginPath();
+        ctx.moveTo(nx, nz);
+        ctx.arc(nx, nz, 14.5 * scale, coneAngle - 0.62, coneAngle + 0.62);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(nx, nz, npc.isEnforcement ? 3.8 : 2.8, 0, Math.PI * 2);
+      ctx.fillStyle = npc.isEnforcement ? '#ef4444' : npc.role === 'supervisor' ? '#f59e0b' : '#94a3b8';
+      ctx.fill();
+    }
+
+    // Draw Player Triangle at Center
+    const activeYaw = this.vehicleManager.currentVehicle ? this.vehicleManager.currentVehicle.yaw : this.player.yaw;
+    ctx.save();
+    ctx.rotate(-activeYaw + Math.PI);
+    ctx.beginPath();
+    ctx.moveTo(0, -6.5);
+    ctx.lineTo(5, 5.5);
+    ctx.lineTo(-5, 5.5);
+    ctx.closePath();
+    ctx.fillStyle = '#22c55e';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+
+    // Update zone tag text
+    const zoneTag = document.getElementById('radar-zone-tag');
+    if (zoneTag) {
+      if (
+        activePos.x >= pz.minX && activePos.x <= pz.maxX &&
+        activePos.z >= pz.minZ && activePos.z <= pz.maxZ
+      ) {
+        zoneTag.textContent = '🕵️ 茶水間消星死角';
+      } else if (activePos.z < 6 && Math.abs(activePos.x) <= 28) {
+        zoneTag.textContent = '🏢 室內營業大廳';
+      } else {
+        zoneTag.textContent = '🚜 戶外工務材料場';
+      }
+    }
+  }
+
+  animate(now) {
+    requestAnimationFrame((t) => this.animate(t));
+
+    const rawDt = Math.min(0.05, (now - this.lastTime) / 1000);
+    this.lastTime = now;
+
+    // Bullet-Time 0.2x when Weapon Wheel is open, or Slow-Mo during Settlement!
+    const targetScale = this.settlementState ? 0.22 : this.weaponSystem.wheelOpen ? 0.2 : 1.0;
+    this.timeScale += (targetScale - this.timeScale) * 0.25;
+    const dt = rawDt * this.timeScale;
+
+    // Step Physics World
+    this.physicsWorld.step(1 / 60, dt, 3);
+
+    const isDriving = Boolean(this.vehicleManager.currentVehicle);
+    const activePos = this.getActivePosition();
+
+    // Update Player when on foot
+    if (!isDriving && !this.settlementState) {
+      const moveX = (this.input.right ? 1 : 0) - (this.input.left ? 1 : 0) + this.input.joyX;
+      const moveZ = (this.input.backward ? 1 : 0) - (this.input.forward ? 1 : 0) + this.input.joyY;
+      const moveLen = Math.hypot(moveX, moveZ);
+
+      // Check if standing on a slippery water puddle
+      let onSlipperyPuddle = false;
+      for (const p of this.gameWorld.puddles) {
+        if (Math.hypot(this.player.body.position.x - p.x, this.player.body.position.z - p.z) <= p.radius) {
+          onSlipperyPuddle = true;
+          break;
+        }
+      }
+
+      const speedBoost = this.player.caffeineTimer > 0 ? 1.85 : 1.0;
+      const baseSpeed = 9.5 * speedBoost;
+
+      if (moveLen > 0.05) {
+        const nx = moveX / moveLen;
+        const nz = moveZ / moveLen;
+        const accelBlend = onSlipperyPuddle ? 0.08 : 0.35;
+        this.player.body.velocity.x += (nx * baseSpeed - this.player.body.velocity.x) * accelBlend;
+        this.player.body.velocity.z += (nz * baseSpeed - this.player.body.velocity.z) * accelBlend;
+        this.player.yaw = Math.atan2(nx, nz);
+      } else if (!onSlipperyPuddle) {
+        this.player.body.velocity.x *= 0.78;
+        this.player.body.velocity.z *= 0.78;
+      }
+
+      if (this.input.attack) {
+        this.weaponSystem.fireWeapon(this.player, this.npcManager);
+      }
+
+      // Caffeine Overclock 6-second countdown & Golden Lightning Aura
+      if (this.player.caffeineTimer > 0) {
+        this.player.caffeineTimer = Math.max(0, this.player.caffeineTimer - rawDt);
+        this.caffeineAura.visible = true;
+        this.caffeineAura.rotation.y += rawDt * 12;
+        this.caffeineAura.rotation.x += rawDt * 8;
+      } else {
+        this.caffeineAura.visible = false;
+      }
+      const cafBar = document.getElementById('caffeine-bar-fill');
+      if (cafBar) cafBar.style.width = `${(this.player.caffeineTimer / 6.0) * 100}%`;
+
+      // Arm swing & leg walk animations
+      if (this.player.swingAnimTimer > 0) {
+        this.player.swingAnimTimer -= dt;
+        this.rightArmGroup.rotation.x = -Math.sin(this.player.swingAnimTimer * 18) * 1.6;
+      } else {
+        this.rightArmGroup.rotation.x = 0;
+      }
+
+      const pSpd = Math.hypot(this.player.body.velocity.x, this.player.body.velocity.z);
+      if (pSpd > 0.8) {
+        const legSwing = Math.sin(now * 0.015) * 0.55;
+        this.playerLeftLeg.rotation.x = legSwing;
+        this.playerRightLeg.rotation.x = -legSwing;
+      } else {
+        this.playerLeftLeg.rotation.x = 0;
+        this.playerRightLeg.rotation.x = 0;
+      }
+
+      this.player.mesh.position.copy(this.player.body.position);
+      this.player.mesh.rotation.y = this.player.yaw;
+    }
+
+    // Check Proximity Interaction Prompt (Vehicles & Side-Mission Coronas)
+    const promptEl = document.getElementById('interaction-prompt');
+    const promptText = document.getElementById('interaction-text');
+    if (promptEl && promptText) {
+      if (!isDriving) {
+        const nearCar = this.vehicleManager.findNearestVehicle(this.player.body.position, 4.4);
+        const nearMission = this.gameWorld.missionRings.find(
+          (m) => Math.hypot(this.player.body.position.x - m.x, this.player.body.position.z - m.z) < 2.9
+        );
+
+        if (nearMission && !this.activeMission) {
+          this.startSideMission(nearMission);
+        }
+
+        if (nearCar) {
+          promptEl.classList.add('visible');
+          promptText.textContent = `按 [F] 搶奪駕駛：${nearCar.name}`;
+        } else {
+          promptEl.classList.remove('visible');
+        }
+      } else {
+        promptEl.classList.remove('visible');
+      }
+    }
+
+    // Update Active Side Mission Timer
+    if (this.activeMission && !this.settlementState) {
+      this.activeMission.timeLeft -= rawDt;
+      this.updateMissionHUD();
+      if (this.activeMission.timeLeft <= 0) {
+        this.showComboBanner('⏰ 支線挑戰時間到！可再次踩入光圈重試！');
+        this.activeMission = null;
+        const hud = document.getElementById('mission-hud');
+        if (hud) hud.classList.remove('active');
+      }
+    }
+
+    // Wanted Level Stealth Cooldown (躲出扇形視野錐 8 秒即可消星！)
+    const stealthWrap = document.getElementById('stealth-cooldown-wrap');
+    if (this.wantedStars > 0 && !this.settlementState) {
+      const spotted = this.npcManager.isPlayerSpottedByEnforcement(activePos);
+      if (!spotted) {
+        this.stealthTimer += rawDt;
+        this.updateWantedHUD(true);
+        if (stealthWrap) stealthWrap.classList.add('active');
+        const remain = Math.max(0, 8.0 - this.stealthTimer);
+        const timerTxt = document.getElementById('stealth-timer-text');
+        const fillEl = document.getElementById('stealth-bar-fill');
+        if (timerTxt) timerTxt.textContent = `${remain.toFixed(1)}s`;
+        if (fillEl) fillEl.style.width = `${Math.min(100, (this.stealthTimer / 8.0) * 100)}%`;
+
+        if (this.stealthTimer >= 8.0) {
+          this.wantedStars = 0;
+          this.wantedPoints = 0;
+          this.stealthTimer = 0;
+          this.npcManager.clearAllEnforcement();
+          this.updateWantedHUD(false);
+          if (stealthWrap) stealthWrap.classList.remove('active');
+          this.audio.playSFX('caffeine_boost');
+          this.showComboBanner('🕵️ 潛行躲藏成功！通緝星等已全部消除！');
+        }
+      } else {
+        this.stealthTimer = Math.max(0, this.stealthTimer - rawDt * 2.0);
+        this.updateWantedHUD(false);
+        if (stealthWrap) stealthWrap.classList.remove('active');
+      }
+    } else if (stealthWrap) {
+      stealthWrap.classList.remove('active');
+    }
+
+    // Update Subsystems
+    this.gameWorld.update(dt, this.npcManager, this.wantedStars);
+    this.vehicleManager.update(dt, this.input, this.npcManager, this.mouseYaw);
+    this.weaponSystem.update(dt, this.player, this.npcManager, isDriving);
+    this.npcManager.update(dt, this.player, this.wantedStars, isDriving);
+    this.audio.update(rawDt, isDriving);
+
+    // Smooth Camera Follow (Pulls back when driving a vehicle or during Slow-Mo Settlement!)
+    const camDist = this.settlementState ? 19 : isDriving ? 16.5 : 11.5;
+    const camHeight = this.settlementState ? 15 : isDriving ? 11.5 : 9.2;
+    const targetCamX = activePos.x;
+    const targetCamY = activePos.y + camHeight;
+    const targetCamZ = activePos.z + camDist;
+
+    this.camera.position.x += (targetCamX - this.camera.position.x) * 0.12;
+    this.camera.position.y += (targetCamY - this.camera.position.y) * 0.12;
+    this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.12;
+    this.camera.lookAt(activePos.x, activePos.y + 0.8, activePos.z - 1.5);
+
+    this.drawRadarMinimap();
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  window.gameApp = new GrandTheftWaterCorpApp();
+});
